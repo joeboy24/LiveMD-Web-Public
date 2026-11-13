@@ -28,8 +28,8 @@ export function ThemeSwitch() {
             onClick={() => applyTheme(option.value)}
             className={
               option.value === "dark"
-                ? "rounded-[7px] px-3 py-1.5 text-[13px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover [[data-theme=dark]_&]:bg-primary [[data-theme=dark]_&]:text-white [[data-theme=dark]_&]:hover:text-white [:root:not([data-theme])_&]:bg-primary [:root:not([data-theme])_&]:text-white"
-                : "rounded-[7px] px-3 py-1.5 text-[13px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover [[data-theme=light]_&]:bg-primary [[data-theme=light]_&]:text-white [[data-theme=light]_&]:hover:text-white"
+                ? "rounded-[7px] px-3 py-1.5 text-[13px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover in-data-[theme=dark]:bg-primary in-data-[theme=dark]:text-white in-data-[theme=dark]:hover:text-white [:root:not([data-theme])_&]:bg-primary [:root:not([data-theme])_&]:text-white"
+                : "rounded-[7px] px-3 py-1.5 text-[13px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover in-data-[theme=light]:bg-primary in-data-[theme=light]:text-white in-data-[theme=light]:hover:text-white"
             }
           >
             {option.label}

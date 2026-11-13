@@ -18,7 +18,7 @@ export function SiteHeader() {
     <header className="border-b border-surface-elevated bg-surface">
       <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3 sm:px-7">
         <Link href="/" className="flex items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary-hover">
-          <span className="grid size-[34px] place-items-center rounded-lg bg-primary text-white">
+          <span className="grid size-8.5 place-items-center rounded-lg bg-primary text-white">
             <Waveform />
           </span>
           <span className="text-[22px] font-bold tracking-tight text-ink">Live MD</span>
