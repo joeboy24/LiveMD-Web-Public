@@ -77,6 +77,9 @@ export function Arrangement({
   const trackKeysRef = useRef(song.trackKeys);
   const guideKeyRef = useRef(song.guideKey);
   const playheadRef = useRef(0);
+  const barSizeRef = useRef(fullBarWidth);
+  const spokenRef = useRef<Array<{ bar: number; place: number; text: string }>>([]);
+  const heardBarsRef = useRef<number | null>(null);
   const scrubbingRef = useRef(false);
   const totalRef = useRef(1);
   const bufferRef = useRef<AudioBuffer | null>(null);
@@ -400,7 +403,45 @@ export function Arrangement({
     if (playingRef.current) startAt(chart);
   }
 
-  function halt() {
+  function silenceCues(forget: boolean) {
+    window.speechSynthesis?.cancel();
+    if (!forget) return;
+    spokenRef.current = [];
+    heardBarsRef.current = null;
+  }
+
+  function speakCues(bars: number) {
+    const previous = heardBarsRef.current;
+    if (previous !== null && bars + 0.08 < previous) {
+      spokenRef.current = spokenRef.current.filter((mark) => mark.place < bars - 0.05);
+    }
+    heardBarsRef.current = bars;
+    const gain = busGain(mixRef.current.cues, mixRef.current);
+    const synth = window.speechSynthesis;
+    if (!synth || gain <= 0.001) {
+      if (gain <= 0.001) synth?.cancel();
+      return;
+    }
+    const delta = bars - (previous ?? bars);
+    for (const cue of cuesRef.current) {
+      const text = cue.text.trim();
+      if (!text) continue;
+      const anchor = cue.place ?? Math.max(cue.bar - 1, 0) + 0.35;
+      const place = cueSpeechPlace(text, anchor, barSizeRef.current);
+      const crossed = previous !== null && delta > 0 && delta < 1.25 && previous < place && bars >= place;
+      const landed = (previous === null || delta < -0.08 || delta >= 1.25) && Math.abs(bars - place) < 0.2;
+      if (!crossed && !landed) continue;
+      if (spokenRef.current.some((mark) => mark.bar === cue.bar && mark.text === text && mark.place === place)) continue;
+      spokenRef.current.push({ bar: cue.bar, place, text });
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.volume = gain;
+      utterance.rate = 1;
+      synth.resume();
+      synth.speak(utterance);
+    }
+  }
+
+  function halt(forgetCues = false) {
     tokenRef.current += 1;
     armTokenRef.current += 1;
     armingRef.current = false;
@@ -418,6 +459,7 @@ export function Arrangement({
         // The source already finished.
       }
     }
+    silenceCues(forgetCues);
   }
 
   function follow() {
@@ -444,13 +486,14 @@ export function Arrangement({
       return;
     }
     if (chart >= totalRef.current - 0.001) {
-      halt();
+      halt(true);
       placeHead(Math.max(totalRef.current - 0.0001, 0), false);
       return;
     }
     playheadRef.current = chart;
     setPlayhead(chart);
     setSelectedBar(Math.min(totalRef.current, Math.max(1, Math.floor(chart) + 1)));
+    speakCues(chart);
     rafRef.current = requestAnimationFrame(follow);
   }
 
@@ -483,7 +526,7 @@ export function Arrangement({
       if (layer.main) {
         source.onended = () => {
           if (tokenRef.current !== token || !playingRef.current) return;
-          halt();
+          halt(true);
           placeHead(Math.max(totalRef.current - 0.0001, 0), false);
         };
       }
@@ -540,7 +583,7 @@ export function Arrangement({
   }
 
   function stop() {
-    halt();
+    halt(true);
     placeHead(0, false);
   }
 
@@ -559,6 +602,7 @@ export function Arrangement({
   useEffect(() => {
     const ids = layersRef.current.map((layer) => layer.id);
     for (const [id, node] of gainsRef.current) node.gain.value = layerGain(id, mix, ids);
+    if (busGain(mix.cues, mix) <= 0.001) window.speechSynthesis?.cancel();
   }, [mix]);
 
   useEffect(() => {
@@ -668,6 +712,7 @@ export function Arrangement({
         }
       }
       void audioRef.current?.close();
+      window.speechSynthesis?.cancel();
     };
   }, []);
 
@@ -835,6 +880,7 @@ export function Arrangement({
                   leadBeats={leadBeats}
                   playhead={Math.min(playhead, totalBars - 0.0001)}
                   waveScale={waveScale}
+                  barSizeRef={barSizeRef}
                   selectedBar={shownBar}
                   onSeek={(chart) => placeHead(chart, true)}
                   onScrub={scrubTo}
@@ -1000,7 +1046,7 @@ export function Arrangement({
         <ul className="mt-4 grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto">
           {cues.length === 0 ? (
             <li className="pt-2 text-[16px] text-muted">
-              {song.stemKey ? "Add cues on the wave under Tracks. They play on Out 3." : "No cues in this song."}
+              {song.stemKey ? "Add cues on the wave under Tracks. They are spoken as the playhead reaches them." : "No cues in this song."}
             </li>
           ) : (
             cues.map((cue, index) => (
@@ -1043,6 +1089,7 @@ function Wave({
   leadBeats,
   playhead,
   waveScale,
+  barSizeRef,
   selectedBar,
   onSeek,
   onScrub,
@@ -1059,6 +1106,7 @@ function Wave({
   leadBeats: number;
   playhead: number;
   waveScale: number;
+  barSizeRef: RefObject<number>;
   selectedBar: number;
   onSeek: (chart: number) => void;
   onScrub: (chart: number) => void;
@@ -1091,6 +1139,7 @@ function Wave({
     const scale = Math.min(Math.max(waveScale, 0), 1);
     return scale >= 0.999 ? full : collapsed + (full - collapsed) * scale;
   })();
+  barSizeRef.current = barSize;
   const width = barSize * Math.max(totalBars, 1);
   const headX = Math.min(Math.max(playhead * barSize, 6), Math.max(width - 6, 6));
   const step = rulerStep(barSize);
@@ -1811,6 +1860,26 @@ function stemLayers(song: { stemKey: string | null; trackKeys: string[]; guideKe
   });
   if (song.guideKey) layers.push({ id: `guide:${song.guideKey}`, name: "Guide", key: song.guideKey, guide: true, main: false });
   return layers;
+}
+
+let cueMeasure: HTMLCanvasElement | null = null;
+
+function cueSpeechPlace(text: string, anchor: number, barSize: number) {
+  const sample = text.trim() || "Cue";
+  const textWidth = measureCueText(sample);
+  const shown = barSize >= 88 || textWidth + 20 <= barSize * 1.2;
+  if (!shown) return anchor;
+  const halfBars = (textWidth + 20) / (2 * Math.max(barSize, 1));
+  return Math.max(anchor - halfBars, 0);
+}
+
+function measureCueText(text: string) {
+  if (typeof document === "undefined") return text.length * 7;
+  cueMeasure ??= document.createElement("canvas");
+  const context = cueMeasure.getContext("2d");
+  if (!context) return text.length * 7;
+  context.font = "600 13px system-ui, sans-serif";
+  return Math.ceil(context.measureText(text).width);
 }
 
 function busGain(channel: MixChannel, mix: Mix) {
