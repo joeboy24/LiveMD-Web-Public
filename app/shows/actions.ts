@@ -119,6 +119,29 @@ export async function readAudio(showId: string, key: string) {
   return signAudioRead(showId, key);
 }
 
+export async function saveStemLayers(showId: string, songId: string, trackKeys: string[], guideKey: string | null) {
+  if (trackKeys.length > 16) return { error: "That arrangement is too long." };
+  const tracks: string[] = [];
+  for (const key of trackKeys) {
+    const owned = ownedAudioKey(showId, key);
+    if (!owned) return { error: "That track is missing." };
+    tracks.push(owned);
+  }
+  const guide = guideKey ? ownedAudioKey(showId, guideKey) : null;
+  if (guideKey && !guide) return { error: "That track is missing." };
+  const sql = getSql();
+  const rows = await sql`
+    update songs
+    set track_keys = ${JSON.stringify(tracks)}::jsonb,
+        guide_key = ${guide}
+    where id = ${songId} and show_id = ${showId}
+    returning id
+  `;
+  if (!rows[0]) return { error: "That song is missing." };
+  revalidatePath("/", "layout");
+  return { error: null as string | null };
+}
+
 export async function saveArrangement(
   showId: string,
   songId: string,

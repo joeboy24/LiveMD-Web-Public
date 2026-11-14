@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { RowMenu } from "../components/row-menu";
-import { readAudio, saveArrangement } from "./actions";
+import { readAudio, saveArrangement, saveStemLayers, signUpload } from "./actions";
 import { THEME_EVENT } from "../theme";
 import { barLabel, cueColor, encodeSectionLyrics, lyricBlocks, moreSectionNames, sectionAtBar, sectionColor, sectionNames } from "./structure";
 import type { Song, SongCue, SongSection } from "./types";
@@ -14,7 +14,19 @@ const headerHeight = 24;
 
 type EditSection = SongSection & { id: string };
 type Segment = "tracks" | "sections" | "cues";
-type Snap = { sections: EditSection[]; cues: SongCue[]; leadBeats: number; slipBars: number; lyrics: string };
+type Snap = {
+  sections: EditSection[];
+  cues: SongCue[];
+  leadBeats: number;
+  slipBars: number;
+  lyrics: string;
+  trackKeys: string[];
+  guideKey: string | null;
+};
+type MixChannel = { level: number; muted: boolean; solo: boolean };
+type Mix = { stems: MixChannel; click: MixChannel; cues: MixChannel; layers: Record<string, MixChannel> };
+type StemLayer = { id: string; name: string; key: string; guide: boolean; main: boolean };
+type LoadedLayer = { id: string; buffer: AudioBuffer; main: boolean };
 
 export function Arrangement({
   showId,
@@ -44,9 +56,14 @@ export function Arrangement({
   const [playing, setPlaying] = useState(false);
   const [looping, setLooping] = useState(false);
   const [rehearsal, setRehearsal] = useState(false);
+  const [mix, setMix] = useState<Mix>({ stems: freshChannel(), click: freshChannel(), cues: freshChannel(), layers: {} });
+  const [layerList, setLayerList] = useState<StemLayer[]>(() => stemLayers(song));
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [addingAudio, setAddingAudio] = useState<"track" | "guide" | null>(null);
   const [ready, setReady] = useState(false);
   const [peaks, setPeaks] = useState<number[] | null>(null);
-  const [status, setStatus] = useState<string | null>(song.stemKey ? "Reading the track…" : null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(song.stemKey ? 0 : null);
   const [error, setError] = useState<string | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -57,11 +74,24 @@ export function Arrangement({
   const leadRef = useRef(leadBeats);
   const slipRef = useRef(slipBars);
   const lyricsRef = useRef(lyrics);
+  const trackKeysRef = useRef(song.trackKeys);
+  const guideKeyRef = useRef(song.guideKey);
   const playheadRef = useRef(0);
   const totalRef = useRef(1);
   const bufferRef = useRef<AudioBuffer | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const layersRef = useRef<LoadedLayer[]>([]);
+  const sourcesRef = useRef<Array<{ id: string; source: AudioBufferSourceNode }>>([]);
+  const gainsRef = useRef<Map<string, GainNode>>(new Map());
+  const removedRef = useRef(new Set<string>());
+  const mixRef = useRef(mix);
+  const mixerRef = useRef<HTMLDivElement>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const trackInputRef = useRef<HTMLInputElement>(null);
+  const guideInputRef = useRef<HTMLInputElement>(null);
+  const armTokenRef = useRef(0);
+  const armingRef = useRef(false);
+  const uploadRef = useRef(false);
   const playRef = useRef<{ contextTime: number; chart: number } | null>(null);
   const playingRef = useRef(false);
   const loopRange = useRef<{ start: number; end: number } | null>(null);
@@ -73,33 +103,68 @@ export function Arrangement({
   leadRef.current = leadBeats;
   slipRef.current = slipBars;
   lyricsRef.current = lyrics;
+  mixRef.current = mix;
 
   const totalBars = Math.max(sections.reduce((sum, section) => sum + section.bars, 0), 1);
   totalRef.current = totalBars;
   const canStart = splitAt(sections, Math.min(selectedBar, totalBars), sectionName.trim() || "Verse") !== null;
 
   useEffect(() => {
-    if (!song.stemKey) return;
+    const files = stemLayers(song);
+    if (!files.some((layer) => layer.main)) return;
     const controller = new AbortController();
     let alive = true;
-    readAudio(showId, song.stemKey)
-      .then(async (signed) => {
+    const showLoadBar = bufferRef.current === null;
+    const ratios = new Map(files.map((layer) => [layer.id, 0]));
+    const publish = () => {
+      if (!showLoadBar) return;
+      let sum = 0;
+      ratios.forEach((value) => {
+        sum += value;
+      });
+      setProgress(Math.min(sum / ratios.size, 0.98));
+    };
+    if (showLoadBar) publish();
+    Promise.all(
+      files.map(async (layer) => {
+        try {
+          const signed = await readAudio(showId, layer.key);
+          if (!alive) return null;
+          if ("error" in signed) return layer.main ? signed : null;
+          const bytes = await readBytes(signed.url, controller.signal, (ratio) => {
+            ratios.set(layer.id, ratio * 0.85);
+            publish();
+          });
+          if (!alive) return null;
+          const context = new AudioContext();
+          const buffer = await context.decodeAudioData(bytes);
+          await context.close();
+          ratios.set(layer.id, 1);
+          publish();
+          return { id: layer.id, buffer, main: layer.main };
+        } catch (reason) {
+          if (reason instanceof DOMException && reason.name === "AbortError") throw reason;
+          return null;
+        }
+      }),
+    )
+      .then((loaded) => {
         if (!alive) return;
-        if ("error" in signed) {
-          setStatus(signed.error ?? "The track didn't load.");
+        const readyLayers = loaded.filter((item): item is LoadedLayer => item !== null && "buffer" in item && !removedRef.current.has(item.id));
+        const main = readyLayers.find((item) => item.main);
+        if (!main) {
+          const failed = loaded.find((item) => item !== null && "error" in item);
+          setProgress(null);
+          setStatus(failed && "error" in failed ? failed.error ?? "The track didn't load." : "The track didn't load.");
           return;
         }
-        const response = await fetch(signed.url, { signal: controller.signal });
-        if (!response.ok) throw new Error("load");
-        const context = new AudioContext();
-        const buffer = await context.decodeAudioData(await response.arrayBuffer());
-        await context.close();
-        if (!alive) return;
+        layersRef.current = readyLayers;
+        bufferRef.current = main.buffer;
         const barDuration = (Math.max(song.beatsPerBar, 1) * 60) / Math.max(song.tempo, 1);
-        const bars = Math.max(1, Math.round(buffer.duration / barDuration));
-        bufferRef.current = buffer;
+        const bars = Math.max(1, Math.round(main.buffer.duration / barDuration));
         setReady(true);
-        setPeaks(peaksFrom(buffer, bars * 8));
+        setPeaks(peaksFrom(main.buffer, bars * 8));
+        if (showLoadBar) setProgress(null);
         setStatus(null);
         if (!seeded.current && sectionsRef.current.length === 0) {
           seeded.current = true;
@@ -110,13 +175,14 @@ export function Arrangement({
       })
       .catch((reason: unknown) => {
         if (!alive || (reason instanceof DOMException && reason.name === "AbortError")) return;
+        setProgress(null);
         setStatus("The track didn't load.");
       });
     return () => {
       alive = false;
       controller.abort();
     };
-  }, [showId, song.id, song.stemKey, song.beatsPerBar, song.tempo]);
+  }, [showId, song.id, song.stemKey, song.guideKey, song.trackKeys, song.beatsPerBar, song.tempo]);
 
   function snapshot(): Snap {
     return {
@@ -125,6 +191,8 @@ export function Arrangement({
       leadBeats: leadRef.current,
       slipBars: slipRef.current,
       lyrics: lyricsRef.current,
+      trackKeys: trackKeysRef.current.slice(),
+      guideKey: guideKeyRef.current,
     };
   }
 
@@ -142,18 +210,35 @@ export function Arrangement({
     nextLead = leadRef.current,
     nextSlip = slipRef.current,
     nextLyrics = lyricsRef.current,
+    nextTracks = trackKeysRef.current.slice(),
+    nextGuide = guideKeyRef.current,
   ) {
     if (record) remember();
+    const tracksChanged = nextGuide !== guideKeyRef.current || !sameKeys(nextTracks, trackKeysRef.current);
+    if (tracksChanged) {
+      const kept = new Set(stemLayers({ stemKey: song.stemKey, trackKeys: nextTracks, guideKey: nextGuide }).map((layer) => layer.id));
+      for (const layer of stemLayers({ stemKey: song.stemKey, trackKeys: trackKeysRef.current, guideKey: guideKeyRef.current })) {
+        if (!layer.main && !kept.has(layer.id)) removedRef.current.add(layer.id);
+      }
+    }
     sectionsRef.current = nextSections;
     cuesRef.current = nextCues;
     leadRef.current = nextLead;
     slipRef.current = nextSlip;
     lyricsRef.current = nextLyrics;
+    trackKeysRef.current = nextTracks;
+    guideKeyRef.current = nextGuide;
     setSections(nextSections);
     setCues(nextCues);
     setLeadBeats(nextLead);
     setSlipBars(nextSlip);
     setLyrics(nextLyrics);
+    if (tracksChanged) {
+      void saveStemLayers(showId, song.id, nextTracks, nextGuide).then((result) => {
+        if (result.error) setError(result.error);
+      });
+      void adoptLayers(nextTracks, nextGuide);
+    }
     void persist(showId, song.id, nextSections, nextCues, nextLead, nextSlip, nextLyrics, setError);
   }
 
@@ -161,7 +246,16 @@ export function Arrangement({
     const previous = undoRef.current.pop();
     if (!previous) return;
     redoRef.current.push(snapshot());
-    apply(previous.sections, previous.cues, false, previous.leadBeats, previous.slipBars, previous.lyrics);
+    apply(
+      previous.sections,
+      previous.cues,
+      false,
+      previous.leadBeats,
+      previous.slipBars,
+      previous.lyrics,
+      previous.trackKeys ?? trackKeysRef.current.slice(),
+      previous.guideKey === undefined ? guideKeyRef.current : previous.guideKey,
+    );
     setCanUndo(undoRef.current.length > 0);
     setCanRedo(true);
   }
@@ -170,7 +264,16 @@ export function Arrangement({
     const next = redoRef.current.pop();
     if (!next) return;
     undoRef.current.push(snapshot());
-    apply(next.sections, next.cues, false, next.leadBeats, next.slipBars, next.lyrics);
+    apply(
+      next.sections,
+      next.cues,
+      false,
+      next.leadBeats,
+      next.slipBars,
+      next.lyrics,
+      next.trackKeys ?? trackKeysRef.current.slice(),
+      next.guideKey === undefined ? guideKeyRef.current : next.guideKey,
+    );
     setCanUndo(true);
     setCanRedo(redoRef.current.length > 0);
   }
@@ -267,16 +370,21 @@ export function Arrangement({
 
   function halt() {
     tokenRef.current += 1;
+    armTokenRef.current += 1;
+    armingRef.current = false;
+    if (!uploadRef.current) setProgress(null);
     playingRef.current = false;
     setPlaying(false);
     cancelAnimationFrame(rafRef.current);
     playRef.current = null;
-    const source = sourceRef.current;
-    sourceRef.current = null;
-    try {
-      source?.stop();
-    } catch {
-      // The source already finished.
+    const sources = sourcesRef.current;
+    sourcesRef.current = [];
+    for (const item of sources) {
+      try {
+        item.source.stop();
+      } catch {
+        // The source already finished.
+      }
     }
   }
 
@@ -302,32 +410,42 @@ export function Arrangement({
   }
 
   function startAt(chart: number) {
-    const buffer = bufferRef.current;
-    if (!buffer) return;
+    const layers = layersRef.current.filter((layer) => !removedRef.current.has(layer.id));
+    if (!layers.some((layer) => layer.main)) return;
     const context = audioRef.current ?? new AudioContext();
     audioRef.current = context;
     void context.resume();
     tokenRef.current += 1;
     const token = tokenRef.current;
-    try {
-      sourceRef.current?.stop();
-    } catch {
-      // The previous source already finished.
+    for (const item of sourcesRef.current) {
+      try {
+        item.source.stop();
+      } catch {
+        // The previous source already finished.
+      }
     }
     const beats = Math.max(song.beatsPerBar, 1);
     const seconds = ((chart * beats - leadRef.current) * 60) / Math.max(song.tempo, 1);
     const delay = Math.max(0, -seconds);
-    const offset = Math.min(Math.max(seconds, 0), Math.max(buffer.duration - 0.02, 0));
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(context.destination);
-    source.onended = () => {
-      if (tokenRef.current !== token || !playingRef.current) return;
-      halt();
-      placeHead(Math.max(totalRef.current - 0.0001, 0), false);
-    };
-    if (buffer.duration - offset > 0.02) source.start(context.currentTime + delay, offset);
-    sourceRef.current = source;
+    const ids = layers.map((layer) => layer.id);
+    const sources: Array<{ id: string; source: AudioBufferSourceNode }> = [];
+    for (const layer of layers) {
+      const offset = Math.min(Math.max(seconds, 0), Math.max(layer.buffer.duration - 0.02, 0));
+      if (layer.buffer.duration - offset <= 0.02) continue;
+      const source = context.createBufferSource();
+      source.buffer = layer.buffer;
+      source.connect(gainFor(layer.id, context, ids));
+      if (layer.main) {
+        source.onended = () => {
+          if (tokenRef.current !== token || !playingRef.current) return;
+          halt();
+          placeHead(Math.max(totalRef.current - 0.0001, 0), false);
+        };
+      }
+      source.start(context.currentTime + delay, offset);
+      sources.push({ id: layer.id, source });
+    }
+    sourcesRef.current = sources;
     playRef.current = { contextTime: context.currentTime, chart };
     playingRef.current = true;
     setPlaying(true);
@@ -338,10 +456,42 @@ export function Arrangement({
     rafRef.current = requestAnimationFrame(follow);
   }
 
+  function gainFor(id: string, context: AudioContext, ids: string[]) {
+    let node = gainsRef.current.get(id);
+    if (!node || node.context !== context) {
+      node?.disconnect();
+      node = context.createGain();
+      node.connect(context.destination);
+      gainsRef.current.set(id, node);
+    }
+    node.gain.value = layerGain(id, mixRef.current, ids);
+    return node;
+  }
+
+  async function beginPlay() {
+    if (armingRef.current || !bufferRef.current) return;
+    armingRef.current = true;
+    const token = armTokenRef.current + 1;
+    armTokenRef.current = token;
+    const showBar = !uploadRef.current;
+    if (showBar) setProgress(0.08);
+    const context = audioRef.current ?? new AudioContext();
+    audioRef.current = context;
+    if (showBar) setProgress(0.4);
+    await context.resume();
+    if (token !== armTokenRef.current) return;
+    if (showBar) setProgress(0.85);
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    if (token !== armTokenRef.current) return;
+    startAt(playheadRef.current);
+    armingRef.current = false;
+    if (showBar && !uploadRef.current) setProgress(null);
+  }
+
   function togglePlay() {
-    if (!bufferRef.current) return;
+    if (!bufferRef.current || armingRef.current) return;
     if (playingRef.current) halt();
-    else startAt(playheadRef.current);
+    else void beginPlay();
   }
 
   function stop() {
@@ -362,12 +512,115 @@ export function Arrangement({
   }
 
   useEffect(() => {
-    return () => {
-      cancelAnimationFrame(rafRef.current);
+    const ids = layersRef.current.map((layer) => layer.id);
+    for (const [id, node] of gainsRef.current) node.gain.value = layerGain(id, mix, ids);
+  }, [mix]);
+
+  useEffect(() => {
+    if (!layersOpen) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (mixerRef.current?.contains(target) || railRef.current?.contains(target)) return;
+      setLayersOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [layersOpen]);
+
+  async function loadLayer(layer: StemLayer): Promise<LoadedLayer | null> {
+    try {
+      const signed = await readAudio(showId, layer.key);
+      if ("error" in signed) return null;
+      const response = await fetch(signed.url);
+      if (!response.ok) return null;
+      const context = new AudioContext();
+      const buffer = await context.decodeAudioData(await response.arrayBuffer());
+      await context.close();
+      return { id: layer.id, buffer, main: layer.main };
+    } catch {
+      return null;
+    }
+  }
+
+  async function adoptLayers(nextTracks: string[], nextGuide: string | null) {
+    const layers = stemLayers({ stemKey: song.stemKey, trackKeys: nextTracks, guideKey: nextGuide });
+    const ids = new Set(layers.map((layer) => layer.id));
+    for (const id of ids) removedRef.current.delete(id);
+    const dropped = sourcesRef.current.filter((item) => !ids.has(item.id));
+    sourcesRef.current = sourcesRef.current.filter((item) => ids.has(item.id));
+    for (const item of dropped) {
       try {
-        sourceRef.current?.stop();
+        item.source.stop();
       } catch {
         // The source already finished.
+      }
+    }
+    for (const id of [...gainsRef.current.keys()]) {
+      if (ids.has(id)) continue;
+      gainsRef.current.get(id)?.disconnect();
+      gainsRef.current.delete(id);
+    }
+    layersRef.current = layersRef.current.filter((item) => ids.has(item.id));
+    setLayerList(layers);
+    if (layers.length < 2) setLayersOpen(false);
+    const have = new Set(layersRef.current.map((item) => item.id));
+    const loaded = (await Promise.all(layers.filter((layer) => !have.has(layer.id)).map((layer) => loadLayer(layer)))).filter(
+      (item): item is LoadedLayer => item !== null,
+    );
+    const allowed = new Set(stemLayers({ stemKey: song.stemKey, trackKeys: trackKeysRef.current, guideKey: guideKeyRef.current }).map((layer) => layer.id));
+    layersRef.current = [...layersRef.current.filter((item) => allowed.has(item.id)), ...loaded.filter((item) => allowed.has(item.id))];
+    if (playingRef.current && loaded.length > 0) startAt(playheadRef.current);
+  }
+
+  async function deleteLayer(layer: StemLayer) {
+    if (layer.main) return;
+    const nextTracks = layer.guide ? trackKeysRef.current.slice() : trackKeysRef.current.filter((key) => key !== layer.key);
+    const nextGuide = layer.guide ? null : guideKeyRef.current;
+    apply(sectionsRef.current, cuesRef.current, true, leadRef.current, slipRef.current, lyricsRef.current, nextTracks, nextGuide);
+  }
+
+  async function addAudio(kind: "track" | "guide", file: File) {
+    if (kind === "track" && trackKeysRef.current.length >= 1) return;
+    if (kind === "guide" && guideKeyRef.current) return;
+    setAddingAudio(kind);
+    uploadRef.current = true;
+    setProgress(0);
+    setError(null);
+    try {
+      const signed = await signUpload({ showId, fileName: file.name, contentType: file.type, size: file.size });
+      if ("error" in signed) throw new Error(signed.error ?? "The audio didn't upload.");
+      await uploadFile(signed.url, file, signed.contentType, (ratio) => setProgress(Math.min(ratio * 0.9, 0.9)));
+      setProgress(0.92);
+      const context = new AudioContext();
+      const decoded = await context.decodeAudioData(await file.arrayBuffer());
+      await context.close();
+      const id = kind === "guide" ? `guide:${signed.key}` : signed.key;
+      layersRef.current = [...layersRef.current.filter((item) => item.id !== id), { id, buffer: decoded, main: false }];
+      setProgress(1);
+      if (kind === "track") {
+        apply(sectionsRef.current, cuesRef.current, true, leadRef.current, slipRef.current, lyricsRef.current, [...trackKeysRef.current, signed.key], guideKeyRef.current);
+      } else {
+        apply(sectionsRef.current, cuesRef.current, true, leadRef.current, slipRef.current, lyricsRef.current, trackKeysRef.current.slice(), signed.key);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The audio didn't upload.");
+    } finally {
+      uploadRef.current = false;
+      setAddingAudio(null);
+      setProgress(null);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      for (const item of sourcesRef.current) {
+        try {
+          item.source.stop();
+        } catch {
+          // The source already finished.
+        }
       }
       void audioRef.current?.close();
     };
@@ -375,6 +628,10 @@ export function Arrangement({
 
   const shownBar = Math.min(totalBars, Math.max(1, Math.floor(Math.min(playhead, totalBars - 0.0001)) + 1));
   const shownSection = sectionAtBar(stored(sections), shownBar);
+  const canAddTrack = layerList.filter((layer) => !layer.main && !layer.guide).length < 1;
+  const canAddGuide = !layerList.some((layer) => layer.guide);
+  const preparing = progress !== null && !playing && addingAudio === null;
+  const percent = progress === null ? 0 : Math.round(Math.min(Math.max(progress, 0), 1) * 100);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -395,7 +652,40 @@ export function Arrangement({
           <IconButton label="Redo" disabled={!canRedo} onClick={redo}>
             <RedoIcon />
           </IconButton>
-          <RowMenu label="Arrangement actions" items={[{ label: "Reset", onSelect: reset }]} />
+          <RowMenu
+            label="Arrangement actions"
+            items={[
+              ...(canAddTrack
+                ? [{ label: "Add a track", disabled: addingAudio !== null, onSelect: () => trackInputRef.current?.click() }]
+                : []),
+              ...(canAddGuide
+                ? [{ label: "Add a guide", disabled: addingAudio !== null, onSelect: () => guideInputRef.current?.click() }]
+                : []),
+              { label: "Reset", onSelect: reset },
+            ]}
+          />
+          <input
+            ref={trackInputRef}
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void addAudio("track", file);
+            }}
+          />
+          <input
+            ref={guideInputRef}
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void addAudio("guide", file);
+            }}
+          />
         </div>
       </div>
 
@@ -424,12 +714,12 @@ export function Arrangement({
           </label>
           <button
             type="button"
-            aria-label={playing ? "Pause" : "Play"}
+            aria-label={preparing ? "Preparing" : playing ? "Pause" : "Play"}
             disabled={!ready}
             onClick={togglePlay}
-            className="grid size-8 place-items-center rounded-full bg-primary text-white outline-none focus-visible:ring-2 focus-visible:ring-primary-hover disabled:opacity-40"
+            className="grid size-8 place-items-center rounded-full bg-primary text-[11px] font-bold text-white tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-primary-hover disabled:opacity-40"
           >
-            {playing ? <PauseIcon /> : <PlayIcon />}
+            {preparing ? percent : playing ? <PauseIcon /> : <PlayIcon />}
           </button>
           <button
             type="button"
@@ -458,6 +748,8 @@ export function Arrangement({
         </div>
       </div>
 
+      {progress !== null ? <ReadyBar percent={percent} /> : null}
+
       <div className="mt-4 grid shrink-0 grid-cols-3 gap-2">
         {(["tracks", "sections", "cues"] as const).map((item) => (
           <button
@@ -479,18 +771,38 @@ export function Arrangement({
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
           {song.stemKey ? (
             <>
-              <Wave
-                sections={sections}
-                cues={cues}
-                totalBars={totalBars}
-                peaks={peaks}
-                beatsPerBar={Math.max(song.beatsPerBar, 1)}
-                leadBeats={leadBeats}
-                playhead={Math.min(playhead, totalBars - 0.0001)}
-                selectedBar={shownBar}
-                onSelect={chooseBar}
-                onMoveEdge={moveEdge}
-              />
+              <div className="relative flex shrink-0 rounded-[14px] border border-ink/10 bg-surface">
+                <TrackRail
+                  mix={mix}
+                  canMix={layerList.length > 1}
+                  open={layersOpen}
+                  railRef={railRef}
+                  onToggle={() => setLayersOpen((open) => !open)}
+                  onChannel={(bus, channel) => setMix((current) => ({ ...current, [bus]: channel }))}
+                />
+                <div className="w-px shrink-0 bg-background" />
+                <Wave
+                  sections={sections}
+                  cues={cues}
+                  totalBars={totalBars}
+                  peaks={peaks}
+                  beatsPerBar={Math.max(song.beatsPerBar, 1)}
+                  leadBeats={leadBeats}
+                  playhead={Math.min(playhead, totalBars - 0.0001)}
+                  selectedBar={shownBar}
+                  onSelect={chooseBar}
+                  onMoveEdge={moveEdge}
+                />
+                {layersOpen && layerList.length > 1 ? (
+                  <StemLayerList
+                    panelRef={mixerRef}
+                    layers={layerList}
+                    mix={mix}
+                    onChannel={(id, channel) => setMix((current) => ({ ...current, layers: { ...current.layers, [id]: channel } }))}
+                    onDelete={deleteLayer}
+                  />
+                ) : null}
+              </div>
               <div className="mt-3 shrink-0 rounded-xl bg-surface p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex h-8 overflow-hidden rounded-[10px] bg-background">
@@ -796,7 +1108,7 @@ function Wave({
   start = 0;
 
   return (
-    <div ref={frameRef} className="shrink-0 overflow-x-auto rounded-xl bg-background">
+    <div ref={frameRef} className="min-w-0 flex-1 overflow-x-auto rounded-r-[14px] bg-background">
       <div className="relative" style={{ width }}>
         <div className="flex" style={{ height: rulerHeight }}>
           {Array.from({ length: totalBars }, (_, index) => {
@@ -1160,6 +1472,316 @@ function peaksFrom(buffer: AudioBuffer, count: number) {
   return peaks.map((peak) => peak / loudest);
 }
 
+function ReadyBar({ percent }: { percent: number }) {
+  return (
+    <div className="mt-3 flex shrink-0 items-center gap-2.5">
+      <div
+        className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-ink/15"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-label="Preparing"
+      >
+        <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
+      </div>
+      <span className="w-11 text-right text-[13px] font-semibold text-muted tabular-nums">{percent}%</span>
+    </div>
+  );
+}
+
+async function readBytes(url: string, signal: AbortSignal, onRatio: (ratio: number) => void) {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error("load");
+  const total = Number(response.headers.get("Content-Length")) || 0;
+  if (!response.body) {
+    onRatio(1);
+    return response.arrayBuffer();
+  }
+  const reader = response.body.getReader();
+  const parts: ArrayBuffer[] = [];
+  let received = 0;
+  let guessed = 0.05;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    parts.push(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+    received += value.byteLength;
+    if (total > 0) onRatio(Math.min(received / total, 1));
+    else {
+      guessed = Math.min(guessed + 0.07, 0.8);
+      onRatio(guessed);
+    }
+  }
+  onRatio(1);
+  const merged = new Uint8Array(received);
+  let offset = 0;
+  for (const part of parts) {
+    merged.set(new Uint8Array(part), offset);
+    offset += part.byteLength;
+  }
+  return merged.buffer;
+}
+
+function uploadFile(url: string, file: File, contentType: string, onProgress: (ratio: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("PUT", url);
+    request.setRequestHeader("Content-Type", contentType);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.min(event.loaded / event.total, 1));
+    };
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) resolve();
+      else reject(new Error("The audio didn't upload."));
+    };
+    request.onerror = () => reject(new Error("The audio didn't upload."));
+    request.send(file);
+  });
+}
+
+function freshChannel(): MixChannel {
+  return { level: 1, muted: false, solo: false };
+}
+
+function sameKeys(left: string[], right: string[]) {
+  return left.length === right.length && left.every((key, index) => key === right[index]);
+}
+
+function stemLayers(song: { stemKey: string | null; trackKeys: string[]; guideKey: string | null }): StemLayer[] {
+  const layers: StemLayer[] = [];
+  if (song.stemKey) layers.push({ id: song.stemKey, name: "Track 1", key: song.stemKey, guide: false, main: true });
+  song.trackKeys.forEach((key, index) => {
+    layers.push({ id: key, name: `Track ${index + 2}`, key, guide: false, main: false });
+  });
+  if (song.guideKey) layers.push({ id: `guide:${song.guideKey}`, name: "Guide", key: song.guideKey, guide: true, main: false });
+  return layers;
+}
+
+function busGain(channel: MixChannel, mix: Mix) {
+  if (channel.muted) return 0;
+  if ((mix.stems.solo || mix.click.solo || mix.cues.solo) && !channel.solo) return 0;
+  return Math.min(Math.max(channel.level, 0), 1);
+}
+
+function layerGain(id: string, mix: Mix, ids: string[]) {
+  const bus = busGain(mix.stems, mix);
+  if (bus <= 0.001) return 0;
+  const channel = mix.layers[id] ?? freshChannel();
+  if (channel.muted) return 0;
+  if (ids.some((item) => mix.layers[item]?.solo) && !channel.solo) return 0;
+  return bus * Math.min(Math.max(channel.level, 0), 1);
+}
+
+function TrackRail({
+  mix,
+  canMix,
+  open,
+  railRef,
+  onToggle,
+  onChannel,
+}: {
+  mix: Mix;
+  canMix: boolean;
+  open: boolean;
+  railRef: RefObject<HTMLDivElement | null>;
+  onToggle: () => void;
+  onChannel: (bus: "stems" | "click" | "cues", channel: MixChannel) => void;
+}) {
+  return (
+    <div ref={railRef} className="flex w-[196px] shrink-0 flex-col rounded-l-[14px] bg-background/45" style={{ height: rulerHeight + laneHeight }}>
+      <div style={{ height: rulerHeight }} />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <TrackLane title="Stems" color="#076FBF" channel={mix.stems} onChange={(channel) => onChannel("stems", channel)}>
+          <button
+            type="button"
+            aria-label="Stem tracks"
+            aria-pressed={open}
+            disabled={!canMix}
+            onClick={onToggle}
+            className={`grid size-[26px] place-items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${canMix && open ? "bg-primary text-white" : "bg-surface-elevated text-muted"} disabled:text-disabled`}
+          >
+            <SlidersIcon />
+          </button>
+        </TrackLane>
+        <TrackLane title="Click" color="var(--muted)" channel={mix.click} onChange={(channel) => onChannel("click", channel)} />
+        <TrackLane title="Cues" color="#FA8E23" channel={mix.cues} onChange={(channel) => onChannel("cues", channel)} />
+      </div>
+    </div>
+  );
+}
+
+function TrackLane({
+  title,
+  color,
+  channel,
+  onChange,
+  children,
+}: {
+  title: string;
+  color: string;
+  channel: MixChannel;
+  onChange: (channel: MixChannel) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col justify-center gap-1 px-2.5">
+      <div className="flex items-center gap-1.5">
+        <span className="h-[22px] w-[3px] shrink-0 rounded-sm" style={{ backgroundColor: color }} />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{title}</span>
+        {children}
+        <RailToggle label={`Mute ${title}`} mark="M" on={channel.muted} color="#E4372D" onClick={() => onChange({ ...channel, muted: !channel.muted })} />
+        <RailToggle label={`Solo ${title}`} mark="S" on={channel.solo} color="#E2B340" onClick={() => onChange({ ...channel, solo: !channel.solo })} />
+      </div>
+      <MixSlider label={`${title} volume`} value={channel.level} tint={color} onChange={(level) => onChange({ ...channel, level })} />
+    </div>
+  );
+}
+
+function RailToggle({ label, mark, on, color, onClick }: { label: string; mark: string; on: boolean; color: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={on}
+      onClick={onClick}
+      className={`grid size-[26px] place-items-center rounded-md text-[12px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${on ? "text-white" : "bg-surface-elevated text-muted"}`}
+      style={on ? { backgroundColor: color } : undefined}
+    >
+      {mark}
+    </button>
+  );
+}
+
+function MixSlider({ label, value, tint, onChange }: { label: string; value: number; tint: string; onChange: (value: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  function fromClient(clientX: number) {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return;
+    const travel = Math.max(rect.width - 12, 1);
+    onChange(Math.min(1, Math.max(0, (clientX - rect.left - 6) / travel)));
+  }
+  const travel = `calc((100% - 12px) * ${Math.min(Math.max(value, 0), 1)})`;
+  return (
+    <div
+      ref={ref}
+      role="slider"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(value * 100)}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        fromClient(event.clientX);
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) fromClient(event.clientX);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowRight" || event.key === "ArrowUp") onChange(Math.min(1, value + 0.05));
+        if (event.key === "ArrowLeft" || event.key === "ArrowDown") onChange(Math.max(0, value - 0.05));
+      }}
+      className="relative h-4 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
+    >
+      <span className="absolute top-1/2 right-0 left-0 h-1 -translate-y-1/2 rounded-full bg-ink/15" />
+      <span className="absolute top-1/2 left-0 h-1 -translate-y-1/2 rounded-full" style={{ width: `calc(${travel} + 6px)`, backgroundColor: tint }} />
+      <span className="absolute top-1/2 size-3 -translate-y-1/2 rounded-full bg-ink shadow-[0_1px_2px_rgb(0_0_0/0.28)]" style={{ left: travel }} />
+    </div>
+  );
+}
+
+function StemLayerList({
+  panelRef,
+  layers,
+  mix,
+  onChannel,
+  onDelete,
+}: {
+  panelRef: RefObject<HTMLDivElement | null>;
+  layers: StemLayer[];
+  mix: Mix;
+  onChannel: (id: string, channel: MixChannel) => void;
+  onDelete: (layer: StemLayer) => Promise<void>;
+}) {
+  const [pending, setPending] = useState<StemLayer | null>(null);
+  const [removing, setRemoving] = useState(false);
+  return (
+    <div
+      ref={panelRef}
+      className="absolute z-30 w-[248px] rounded-xl bg-surface-elevated p-3 shadow-[0_8px_24px_rgb(0_0_0/0.28)]"
+      style={{ left: 204, top: rulerHeight + 8 }}
+    >
+      <div className="grid gap-2.5">
+        {layers.map((layer) => {
+          const channel = mix.layers[layer.id] ?? freshChannel();
+          return (
+            <div key={layer.id}>
+              <div className="flex items-center gap-1.5">
+                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink">{layer.name}</span>
+                {layer.main ? null : (
+                  <button
+                    type="button"
+                    aria-label={`Delete ${layer.name}`}
+                    onClick={() => setPending(layer)}
+                    className="grid size-6 place-items-center rounded-md text-muted outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
+                  >
+                    <TrashIcon />
+                  </button>
+                )}
+              </div>
+              <div className="mt-1 flex items-center gap-1.5">
+                <div className="min-w-0 flex-1">
+                  <MixSlider
+                    label={`${layer.name} volume`}
+                    value={channel.level}
+                    tint={layer.guide ? "var(--muted)" : "#076FBF"}
+                    onChange={(level) => onChannel(layer.id, { ...channel, level })}
+                  />
+                </div>
+                <RailToggle label={`Mute ${layer.name}`} mark="M" on={channel.muted} color="#E4372D" onClick={() => onChannel(layer.id, { ...channel, muted: !channel.muted })} />
+                <RailToggle label={`Solo ${layer.name}`} mark="S" on={channel.solo} color="#E2B340" onClick={() => onChannel(layer.id, { ...channel, solo: !channel.solo })} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {pending ? (
+        <div className="absolute inset-0 grid content-center rounded-xl bg-surface-elevated p-3">
+          <p className="text-[13px] font-semibold text-ink">Delete {pending.name}?</p>
+          <p className="mt-1 text-[12px] text-muted">This removes it from the song.</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPending(null)}
+              className="h-7 rounded-md bg-surface px-2.5 text-[12px] font-semibold text-ink"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={removing}
+              onClick={() => {
+                const layer = pending;
+                if (!layer) return;
+                setRemoving(true);
+                void onDelete(layer).finally(() => {
+                  setRemoving(false);
+                  setPending(null);
+                });
+              }}
+              className="h-7 rounded-md bg-[#e4372d] px-2.5 text-[12px] font-semibold text-white disabled:opacity-40"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function IconButton({
   label,
   disabled,
@@ -1230,6 +1852,25 @@ function StopIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <rect x="4" y="4" width="8" height="8" rx="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SlidersIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="4.5" cy="3.5" r="1.35" fill="currentColor" />
+      <circle cx="9" cy="7" r="1.35" fill="currentColor" />
+      <circle cx="6" cy="10.5" r="1.35" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+      <path d="M2.2 3.4h8.6M5 3.4V2.4h3v1M3.2 3.4l.5 7.2h5.6l.5-7.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
