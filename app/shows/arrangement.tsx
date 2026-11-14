@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { RowMenu } from "../components/row-menu";
 import { readAudio, saveArrangement, saveStemLayers, signUpload } from "./actions";
 import { THEME_EVENT } from "../theme";
@@ -77,6 +77,7 @@ export function Arrangement({
   const trackKeysRef = useRef(song.trackKeys);
   const guideKeyRef = useRef(song.guideKey);
   const playheadRef = useRef(0);
+  const scrubbingRef = useRef(false);
   const totalRef = useRef(1);
   const bufferRef = useRef<AudioBuffer | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
@@ -356,16 +357,34 @@ export function Arrangement({
     return { start: 0, end: totalRef.current };
   }
 
-  function placeHead(chart: number, resume: boolean) {
+  function publishHead(chart: number) {
     const next = Math.min(Math.max(chart, 0), Math.max(totalRef.current - 0.0001, 0));
     playheadRef.current = next;
     setPlayhead(next);
     setSelectedBar(Math.min(totalRef.current, Math.max(1, Math.floor(next) + 1)));
+    return next;
+  }
+
+  function placeHead(chart: number, resume: boolean) {
+    const next = publishHead(chart);
     if (playingRef.current && resume) {
       startAt(next);
       return;
     }
     if (loopRange.current) loopRange.current = spanAt(next);
+  }
+
+  function scrubTo(chart: number) {
+    scrubbingRef.current = true;
+    publishHead(chart);
+  }
+
+  function endScrub() {
+    if (!scrubbingRef.current) return;
+    scrubbingRef.current = false;
+    const chart = playheadRef.current;
+    if (loopRange.current) loopRange.current = spanAt(chart);
+    if (playingRef.current) startAt(chart);
   }
 
   function halt() {
@@ -389,6 +408,19 @@ export function Arrangement({
   }
 
   function follow() {
+    if (scrubbingRef.current) {
+      const anchor = playRef.current;
+      const context = audioRef.current;
+      if (anchor && context && playingRef.current) {
+        const heard = anchor.chart + (context.currentTime - anchor.contextTime) / barSeconds();
+        if (Math.abs(heard - playheadRef.current) * barSeconds() > 0.3) {
+          startAt(playheadRef.current);
+          return;
+        }
+      }
+      rafRef.current = requestAnimationFrame(follow);
+      return;
+    }
     const anchor = playRef.current;
     const context = audioRef.current;
     if (!anchor || !context || !playingRef.current) return;
@@ -790,7 +822,9 @@ export function Arrangement({
                   leadBeats={leadBeats}
                   playhead={Math.min(playhead, totalBars - 0.0001)}
                   selectedBar={shownBar}
-                  onSelect={chooseBar}
+                  onSeek={(chart) => placeHead(chart, true)}
+                  onScrub={scrubTo}
+                  onScrubEnd={endScrub}
                   onMoveEdge={moveEdge}
                 />
                 {layersOpen && layerList.length > 1 ? (
@@ -1011,7 +1045,9 @@ function Wave({
   leadBeats,
   playhead,
   selectedBar,
-  onSelect,
+  onSeek,
+  onScrub,
+  onScrubEnd,
   onMoveEdge,
 }: {
   sections: EditSection[];
@@ -1022,11 +1058,15 @@ function Wave({
   leadBeats: number;
   playhead: number;
   selectedBar: number;
-  onSelect: (bar: number) => void;
+  onSeek: (chart: number) => void;
+  onScrub: (chart: number) => void;
+  onScrubEnd: () => void;
   onMoveEdge: (index: number, bar: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  const laneRef = useRef<HTMLDivElement>(null);
+  const scrubRef = useRef(false);
   const dragRef = useRef<{ index: number; originX: number; originBar: number; bar: number } | null>(null);
   const [drag, setDrag] = useState<{ index: number; originX: number; originBar: number; bar: number } | null>(null);
   const [theme, setTheme] = useState("dark");
@@ -1034,6 +1074,7 @@ function Wave({
   const shown = drag ? previewEdge(sections, drag.index, drag.bar) : sections;
   const barSize = Math.max(barWidth, frameWidth / Math.max(totalBars, 1));
   const width = barSize * Math.max(totalBars, 1);
+  const headX = Math.min(Math.max(playhead * barSize, 6), Math.max(width - 6, 6));
   const step = rulerStep(barSize);
 
   useEffect(() => {
@@ -1107,10 +1148,68 @@ function Wave({
   });
   start = 0;
 
+  function chartAt(clientX: number) {
+    const bounds = laneRef.current?.getBoundingClientRect();
+    if (!bounds) return 0;
+    return Math.min(Math.max((clientX - bounds.left) / barSize, 0), Math.max(totalBars - 0.0001, 0));
+  }
+
+  function keepVisible(chart: number) {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const x = chart * barSize;
+    const left = frame.scrollLeft;
+    const right = left + frame.clientWidth;
+    const margin = 40;
+    if (x < left + margin) frame.scrollLeft = Math.max(0, x - margin);
+    else if (x > right - margin) frame.scrollLeft = x - frame.clientWidth + margin;
+  }
+
+  function beginScrub(event: ReactPointerEvent<HTMLDivElement>) {
+    const target = event.target;
+    if (target instanceof Element && target.closest("[data-edge]")) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const y = event.clientY - bounds.top;
+    const x = event.clientX - bounds.left;
+    const claimed = y <= rulerHeight + 6 || Math.abs(x - headX) <= 24;
+    if (!claimed) return;
+    event.preventDefault();
+    scrubRef.current = true;
+    const chart = chartAt(event.clientX);
+    keepVisible(chart);
+    onScrub(chart);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // A pointer that is already gone cannot be captured.
+    }
+  }
+
+  function moveScrub(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!scrubRef.current) return;
+    const chart = chartAt(event.clientX);
+    keepVisible(chart);
+    onScrub(chart);
+  }
+
+  function finishScrub() {
+    if (!scrubRef.current) return;
+    scrubRef.current = false;
+    onScrubEnd();
+  }
+
   return (
     <div ref={frameRef} className="min-w-0 flex-1 overflow-x-auto rounded-r-[14px] bg-background">
-      <div className="relative" style={{ width }}>
-        <div className="flex" style={{ height: rulerHeight }}>
+      <div
+        ref={laneRef}
+        className="relative select-none"
+        style={{ width }}
+        onPointerDown={beginScrub}
+        onPointerMove={moveScrub}
+        onPointerUp={finishScrub}
+        onPointerCancel={finishScrub}
+      >
+        <div className="flex cursor-ew-resize" style={{ height: rulerHeight, touchAction: "none" }}>
           {Array.from({ length: totalBars }, (_, index) => {
             const bar = index + 1;
             const marked = bar === 1 || bar % step === 0;
@@ -1158,11 +1257,11 @@ function Wave({
               </span>
             );
           })}
-          <span className="pointer-events-none absolute top-0 z-10 h-full w-px bg-ink" style={{ left: playhead * barSize }} />
           {boundaries.map((edge) => (
             <button
               key={edge.index}
               type="button"
+              data-edge=""
               aria-label={`Move section edge at bar ${edge.bar + 1}`}
               className="absolute z-20 w-7 -translate-x-1/2 cursor-ew-resize"
               style={{ left: edge.bar * barSize, top: 0, height: laneHeight }}
@@ -1197,15 +1296,26 @@ function Wave({
           ))}
           <button
             type="button"
-            aria-label="Choose a bar"
+            aria-label="Move the playhead"
             className="absolute inset-0 z-0"
-            onClick={(event) => {
-              const bounds = event.currentTarget.getBoundingClientRect();
-              const place = Math.min(Math.max((event.clientX - bounds.left) / barSize, 0), totalBars - 0.0001);
-              onSelect(Math.min(Math.max(Math.floor(place) + 1, 1), totalBars));
-            }}
+            onClick={(event) => onSeek(chartAt(event.clientX))}
           />
         </div>
+        <div
+          className="pointer-events-none absolute top-0 z-10 drop-shadow-[0_0_1px_rgb(0_0_0/0.55)]"
+          style={{ left: headX, height: rulerHeight + laneHeight }}
+        >
+          <svg width="12" height="8" viewBox="0 0 12 8" className="absolute top-0 left-1/2 -translate-x-1/2 text-ink" aria-hidden="true">
+            <path d="M6 8 L0 0 H12 Z" fill="currentColor" />
+          </svg>
+          <span className="absolute top-2 left-1/2 h-[calc(100%-8px)] w-[1.5px] -translate-x-1/2 bg-ink" />
+        </div>
+        <button
+          type="button"
+          aria-label="Drag the playhead"
+          className="absolute top-0 z-10 w-12 -translate-x-1/2 cursor-ew-resize border-0 bg-transparent p-0 outline-none"
+          style={{ left: headX, height: rulerHeight + laneHeight, touchAction: "none" }}
+        />
       </div>
     </div>
   );
