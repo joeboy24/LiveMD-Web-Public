@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { Modal } from "../components/modal";
 import { RowMenu } from "../components/row-menu";
-import { createSong, deleteSong } from "./actions";
+import { createSong } from "./actions";
+import { useSetlistHistory } from "./history";
 import { songLine } from "./format";
 import { SongForm } from "./song-form";
 import type { Song } from "./types";
 
 export function SongList({ showId, songs }: { showId: string; songs: Song[] }) {
+  const history = useSetlistHistory();
   const [adding, setAdding] = useState(false);
   const slots = songs.length + 1;
 
@@ -45,7 +47,7 @@ export function SongList({ showId, songs }: { showId: string; songs: Song[] }) {
                 items={[
                   { label: "Arrangement" },
                   { label: "Download", disabled: true },
-                  { label: "Remove", onSelect: () => deleteSong(song.id) },
+                  { label: "Delete", onSelect: () => void history.removeSong(showId, song) },
                 ]}
               />
             </li>
@@ -54,7 +56,13 @@ export function SongList({ showId, songs }: { showId: string; songs: Song[] }) {
       </ul>
       {adding ? (
         <Modal title="Add song" tone="background" onClose={() => setAdding(false)}>
-          <SongForm action={createSong.bind(null, showId)} onSaved={() => setAdding(false)} />
+          <SongForm
+            action={createSong.bind(null, showId)}
+            onSaved={(song) => {
+              setAdding(false);
+              history.record({ kind: "add", showId, song });
+            }}
+          />
         </Modal>
       ) : null}
     </>

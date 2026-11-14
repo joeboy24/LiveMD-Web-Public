@@ -3,6 +3,7 @@ import Script from "next/script";
 import { Suspense } from "react";
 import { IconRail } from "./components/icon-rail";
 import { HeaderFallback, SiteHeader } from "./components/site-header";
+import { SetlistHistory } from "./shows/history";
 import { ShowSidebar } from "./shows/show-sidebar";
 import { THEME_KEY } from "./theme";
 import "./globals.css";
@@ -24,7 +25,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Suspense fallback={<HeaderFallback />}>
           <SiteHeader />
         </Suspense>
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[290px_minmax(0,3fr)_minmax(180px,1fr)_3.25rem] md:overflow-hidden">
+        <SetlistHistory>
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[300px_minmax(0,3fr)_minmax(180px,1fr)_3.25rem] md:overflow-hidden">
           <aside className="flex min-h-0 flex-col px-4 pt-4 md:h-full md:overflow-hidden md:border-r md:border-surface-elevated md:px-3 md:py-4">
             <Suspense fallback={<p className="text-base text-muted">Loading shows.</p>}>
               <ShowSidebar />
@@ -34,6 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <aside aria-label="Chat and todos" className="hidden min-h-0 border-l border-surface-elevated md:block" />
           <IconRail />
         </div>
+        </SetlistHistory>
       </body>
     </html>
   );

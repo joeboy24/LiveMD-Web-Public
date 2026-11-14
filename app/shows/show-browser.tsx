@@ -9,8 +9,10 @@ import { ListRow } from "../components/list-row";
 import { Modal } from "../components/modal";
 import { PrimaryButton } from "../components/primary-button";
 import { MonthCalendar } from "../components/month-calendar";
+import { RowMenu } from "../components/row-menu";
 import { SearchField } from "../components/search-field";
 import { createShow } from "./actions";
+import { useSetlistHistory } from "./history";
 import { songCountLabel } from "./format";
 import type { FormState, Show } from "./types";
 
@@ -40,6 +42,7 @@ function dayPhrase(dateKey: string) {
 
 export function ShowBrowser({ shows }: { shows: Show[] }) {
   const router = useRouter();
+  const history = useSetlistHistory();
   const selectedId = useSearchParams().get("show");
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -95,6 +98,23 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
                 leading={<DateMark month={show.month} day={show.day} />}
                 title={show.title}
                 meta={songCountLabel(show.songCount)}
+                trailing={
+                  <RowMenu
+                    label={`${show.title} actions`}
+                    items={[
+                      {
+                        label: show.ipadUpdate ? "Redownload" : "Download",
+                        disabled: !show.ipadUpdate,
+                      },
+                      {
+                        label: "Delete",
+                        onSelect: () => {
+                          void history.removeShow(show.id, show.id === selectedId);
+                        },
+                      },
+                    ]}
+                  />
+                }
               />
             </li>
           ))}
@@ -116,10 +136,28 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
   );
 }
 
+function todayKey() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 function AddSetlistDialog({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const history = useSetlistHistory();
   const [name, setName] = useState("");
-  const [state, formAction, pending] = useActionState(createShow, initialState);
-  const ready = name.trim().length > 0;
+  const [performedOn, setPerformedOn] = useState(todayKey);
+  const [state, formAction, pending] = useActionState(async (previous: FormState, formData: FormData) => {
+    const result = await createShow(previous, formData);
+    if (result.show) {
+      history.record({ kind: "add-show", show: result.show, reopen: true });
+      onClose();
+      router.push(`/?show=${result.show.id}`);
+    }
+    return result;
+  }, initialState);
+  const ready = name.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(performedOn);
 
   return (
     <Modal title="Add Setlist" onClose={onClose}>
@@ -132,6 +170,15 @@ function AddSetlistDialog({ onClose }: { onClose: () => void }) {
           onChange={(event) => setName(event.target.value)}
           placeholder="ex. Funkadelphi 2026"
           autoFocus
+        />
+        <Field
+          className="mt-4"
+          label="Performance date"
+          name="performedOn"
+          type="date"
+          value={performedOn}
+          onChange={(event) => setPerformedOn(event.target.value)}
+          required
         />
         {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
         <PrimaryButton type="submit" disabled={pending || !ready} className="mt-4 w-full">

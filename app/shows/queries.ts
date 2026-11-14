@@ -4,17 +4,18 @@ import type { Show, Song } from "./types";
 export async function listShows(): Promise<Show[]> {
   const sql = getSql();
   const rows = await sql`
-    select shows.id, shows.title, shows.created_at as "createdAt", count(songs.id)::int as "songCount"
+    select shows.id, shows.title, shows.performed_on as "performedOn", count(songs.id)::int as "songCount"
     from shows
     left join songs on songs.show_id = shows.id
     group by shows.id
-    order by shows.created_at desc
+    order by shows.performed_on desc, shows.created_at desc
   `;
   return rows.map((row) => ({
     id: String(row.id),
     title: String(row.title),
     songCount: Number(row.songCount),
-    ...showDate(row.createdAt),
+    ipadUpdate: false,
+    ...showDate(row.performedOn),
   }));
 }
 
@@ -47,16 +48,18 @@ export async function listSongs(showId: string): Promise<Song[]> {
 }
 
 function showDate(value: unknown) {
-  const date = new Date(String(value));
+  const parts = value instanceof Date
+    ? [value.getFullYear(), value.getMonth() + 1, value.getDate()]
+    : String(value).slice(0, 10).split("-").map(Number);
+  const [year, monthNumber, dayNumber] = parts;
+  const date = new Date(Date.UTC(year, monthNumber - 1, dayNumber));
   const month = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(date).toUpperCase();
-  const dayNumber = date.getUTCDate();
-  const day = String(dayNumber);
-  const dateKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(dayNumber).padStart(2, "0")}`;
+  const dateKey = `${year}-${String(monthNumber).padStart(2, "0")}-${String(dayNumber).padStart(2, "0")}`;
   const dateLabel = new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
     timeZone: "UTC",
   }).format(date);
-  return { month, day, dateLabel, dateKey };
+  return { month, day: String(dayNumber), dateLabel, dateKey };
 }

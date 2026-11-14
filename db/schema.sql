@@ -1,6 +1,7 @@
 create table if not exists shows (
   id uuid primary key default gen_random_uuid(),
   title text not null,
+  performed_on date not null,
   created_at timestamptz not null default now()
 );
 

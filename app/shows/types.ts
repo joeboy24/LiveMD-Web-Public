@@ -6,6 +6,7 @@ export type Show = {
   day: string;
   dateLabel: string;
   dateKey: string;
+  ipadUpdate: boolean;
 };
 
 export type Song = {
@@ -19,7 +20,16 @@ export type Song = {
   lyrics: string;
 };
 
+export type ShowSnapshot = {
+  id: string;
+  title: string;
+  performedOn: string;
+  songs: Array<Song & { createdAt: string }>;
+};
+
 export type FormState = {
   error: string | null;
   saved?: boolean;
+  song?: Song;
+  show?: ShowSnapshot;
 };

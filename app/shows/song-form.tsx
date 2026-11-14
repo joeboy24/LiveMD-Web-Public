@@ -3,7 +3,7 @@
 import { useActionState, useRef, useState } from "react";
 import { Field, TextArea } from "../components/field";
 import { ImportRow } from "../components/import-row";
-import type { FormState } from "./types";
+import type { FormState, Song } from "./types";
 
 const keys = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 const initialState: FormState = { error: null };
@@ -13,7 +13,7 @@ export function SongForm({
   onSaved,
 }: {
   action: (state: FormState, formData: FormData) => Promise<FormState>;
-  onSaved?: () => void;
+  onSaved?: (song: Song) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [title, setTitle] = useState("");
@@ -33,7 +33,7 @@ export function SongForm({
       setTrackOne("");
       setTrackTwo("");
       setGuide("");
-      onSaved?.();
+      if (result.song) onSaved?.(result.song);
     }
     return result;
   }, initialState);
@@ -86,7 +86,7 @@ export function SongForm({
         </select>
       </div>
       <input type="hidden" name="tempo" value={tempo} />
-      <TextArea className="mt-4" label="Lyrics" name="lyrics" tone="surface" rows={4} placeholder="Lyrics" />
+      <TextArea className="mt-4" label="Lyrics" name="lyrics" tone="surface" rows={4} placeholder="Paste lyrics here" />
       {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
       <button
         type="submit"
