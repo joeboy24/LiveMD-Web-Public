@@ -7,7 +7,7 @@ import { THEME_EVENT } from "../theme";
 import { barLabel, cueColor, encodeSectionLyrics, lyricBlocks, moreSectionNames, sectionAtBar, sectionColor, sectionNames } from "./structure";
 import type { Song, SongCue, SongSection } from "./types";
 
-const barWidth = 32;
+const fullBarWidth = 92;
 const rulerHeight = 28;
 const laneHeight = 132;
 const headerHeight = 24;
@@ -50,9 +50,9 @@ export function Arrangement({
   const [editingLyrics, setEditingLyrics] = useState(false);
   const [draftLines, setDraftLines] = useState<string[]>([]);
   const [sectionName, setSectionName] = useState("Verse");
-  const [cueText, setCueText] = useState("");
   const [selectedBar, setSelectedBar] = useState(1);
   const [playhead, setPlayhead] = useState(0);
+  const [waveScale, setWaveScale] = useState(1);
   const [playing, setPlaying] = useState(false);
   const [looping, setLooping] = useState(false);
   const [rehearsal, setRehearsal] = useState(false);
@@ -284,15 +284,28 @@ export function Arrangement({
     if (next) apply(next, cues);
   }
 
-  function addCue() {
-    const text = cueText.trim();
-    if (!text) return;
-    const bar = Math.min(Math.max(selectedBar, 1), totalBars);
-    const next = [...cues, { bar, text, place: bar - 1, y: 0.5 }].sort(
+  function moveCue(index: number, place: number, y: number) {
+    const current = cuesRef.current;
+    const cue = current[index];
+    if (!cue) return;
+    const bar = Math.min(totalRef.current, Math.max(1, Math.floor(place) + 1));
+    const sameBar = cue.bar === bar;
+    const samePlace = Math.abs((cue.place ?? place) - place) < 0.02;
+    const sameY = Math.abs((cue.y ?? y) - y) < 0.02;
+    if (sameBar && samePlace && sameY) return;
+    const next = current.map((item, itemIndex) => (itemIndex === index ? { ...item, bar, place, y } : item));
+    next.sort((left, right) => (left.place ?? left.bar) - (right.place ?? right.bar));
+    apply(sectionsRef.current, next);
+  }
+
+  function addCueAt(place: number, y: number, text: string) {
+    const trimmed = text.trim().slice(0, 80);
+    if (!trimmed || cuesRef.current.length >= 200) return;
+    const bar = Math.min(totalRef.current, Math.max(1, Math.floor(place) + 1));
+    const next = [...cuesRef.current, { bar, text: trimmed, place, y: Math.min(0.94, Math.max(0.06, y)) }].sort(
       (left, right) => (left.place ?? left.bar) - (right.place ?? right.bar),
     );
-    setCueText("");
-    apply(sections, next);
+    apply(sectionsRef.current, next);
   }
 
   function nudge(delta: number) {
@@ -821,10 +834,13 @@ export function Arrangement({
                   beatsPerBar={Math.max(song.beatsPerBar, 1)}
                   leadBeats={leadBeats}
                   playhead={Math.min(playhead, totalBars - 0.0001)}
+                  waveScale={waveScale}
                   selectedBar={shownBar}
                   onSeek={(chart) => placeHead(chart, true)}
                   onScrub={scrubTo}
                   onScrubEnd={endScrub}
+                  onAddCue={addCueAt}
+                  onMoveCue={moveCue}
                   onMoveEdge={moveEdge}
                 />
                 {layersOpen && layerList.length > 1 ? (
@@ -888,30 +904,12 @@ export function Arrangement({
                     <span className="min-w-[96px] text-center text-[12px] font-semibold text-ink tabular-nums">{leadLabel(leadBeats)}</span>
                     <NudgeButton label="+" onClick={() => nudge(0.1)} />
                     <NudgeButton label="+ Beat" onClick={() => nudge(1)} />
+                    <div className="w-[132px]">
+                      <MixSlider label="Wave width" value={waveScale} tint="var(--muted)" onChange={setWaveScale} />
+                    </div>
                   </div>
                 </div>
                 <p className="mt-3 text-[12px] text-muted">Nudge if the first beat feels early or late. Section edges stay on the bar.</p>
-                <div className="mt-3 flex gap-2">
-                  <input
-                    aria-label="Cue"
-                    value={cueText}
-                    placeholder="Cue"
-                    onChange={(event) => setCueText(event.target.value)}
-                    className="h-8 min-w-0 flex-1 rounded-[10px] bg-background px-2.5 text-[13px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
-                  />
-                  <button
-                    type="button"
-                    disabled={!cueText.trim()}
-                    onClick={addCue}
-                    className={
-                      cueText.trim()
-                        ? "h-8 rounded-[10px] bg-primary px-2.5 text-[13px] font-semibold text-white"
-                        : "h-8 rounded-[10px] bg-background px-2.5 text-[13px] font-semibold text-disabled"
-                    }
-                  >
-                    Add cue
-                  </button>
-                </div>
               </div>
               {rehearsal && sections.length > 0 ? (
                 <LyricsPane
@@ -1044,10 +1042,13 @@ function Wave({
   beatsPerBar,
   leadBeats,
   playhead,
+  waveScale,
   selectedBar,
   onSeek,
   onScrub,
   onScrubEnd,
+  onAddCue,
+  onMoveCue,
   onMoveEdge,
 }: {
   sections: EditSection[];
@@ -1057,22 +1058,39 @@ function Wave({
   beatsPerBar: number;
   leadBeats: number;
   playhead: number;
+  waveScale: number;
   selectedBar: number;
   onSeek: (chart: number) => void;
   onScrub: (chart: number) => void;
   onScrubEnd: () => void;
+  onAddCue: (place: number, y: number, text: string) => void;
+  onMoveCue: (index: number, place: number, y: number) => void;
   onMoveEdge: (index: number, bar: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const laneRef = useRef<HTMLDivElement>(null);
   const scrubRef = useRef(false);
+  const scrubStart = useRef(0);
+  const ignoreClick = useRef(false);
+  const cueDrag = useRef<{ index: number; originX: number; originY: number; originPlace: number; originYPos: number; place: number; y: number } | null>(null);
+  const [cueLift, setCueLift] = useState<{ index: number; place: number; y: number } | null>(null);
+  const draftRef = useRef<{ id: number; place: number; y: number; text: string } | null>(null);
+  const draftId = useRef(0);
+  const draftInputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState<{ id: number; place: number; y: number; text: string } | null>(null);
   const dragRef = useRef<{ index: number; originX: number; originBar: number; bar: number } | null>(null);
   const [drag, setDrag] = useState<{ index: number; originX: number; originBar: number; bar: number } | null>(null);
   const [theme, setTheme] = useState("dark");
   const [frameWidth, setFrameWidth] = useState(0);
   const shown = drag ? previewEdge(sections, drag.index, drag.bar) : sections;
-  const barSize = Math.max(barWidth, frameWidth / Math.max(totalBars, 1));
+  const barSize = (() => {
+    const full = fullBarWidth;
+    const fitted = frameWidth > 0 ? frameWidth / Math.max(totalBars, 1) : full;
+    const collapsed = Math.min(fitted, full);
+    const scale = Math.min(Math.max(waveScale, 0), 1);
+    return scale >= 0.999 ? full : collapsed + (full - collapsed) * scale;
+  })();
   const width = barSize * Math.max(totalBars, 1);
   const headX = Math.min(Math.max(playhead * barSize, 6), Math.max(width - 6, 6));
   const step = rulerStep(barSize);
@@ -1165,16 +1183,42 @@ function Wave({
     else if (x > right - margin) frame.scrollLeft = x - frame.clientWidth + margin;
   }
 
+  function commitDraft() {
+    const current = draftRef.current;
+    if (!current) return;
+    draftRef.current = null;
+    setDraft(null);
+    const text = current.text.trim();
+    if (text) onAddCue(current.place, current.y, text);
+  }
+
+  function openDraft(clientX: number, clientY: number) {
+    commitDraft();
+    const bounds = laneRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const place = Math.min(Math.max((clientX - bounds.left) / barSize, 0), Math.max(totalBars - 0.0001, 0));
+    const y = Math.min(0.94, Math.max(0.06, (clientY - bounds.top - rulerHeight) / laneHeight));
+    draftId.current += 1;
+    const next = { id: draftId.current, place, y, text: "" };
+    draftRef.current = next;
+    setDraft(next);
+  }
+
   function beginScrub(event: ReactPointerEvent<HTMLDivElement>) {
     const target = event.target;
-    if (target instanceof Element && target.closest("[data-edge]")) return;
+    if (target instanceof Element && target.closest("[data-draft], [data-cue], [data-edge]")) return;
+    if (draftRef.current) {
+      commitDraft();
+      ignoreClick.current = true;
+      return;
+    }
     const bounds = event.currentTarget.getBoundingClientRect();
     const y = event.clientY - bounds.top;
     const x = event.clientX - bounds.left;
     const claimed = y <= rulerHeight + 6 || Math.abs(x - headX) <= 24;
     if (!claimed) return;
-    event.preventDefault();
     scrubRef.current = true;
+    scrubStart.current = event.clientX;
     const chart = chartAt(event.clientX);
     keepVisible(chart);
     onScrub(chart);
@@ -1187,6 +1231,7 @@ function Wave({
 
   function moveScrub(event: ReactPointerEvent<HTMLDivElement>) {
     if (!scrubRef.current) return;
+    if (Math.abs(event.clientX - scrubStart.current) > 4) ignoreClick.current = true;
     const chart = chartAt(event.clientX);
     keepVisible(chart);
     onScrub(chart);
@@ -1208,6 +1253,14 @@ function Wave({
         onPointerMove={moveScrub}
         onPointerUp={finishScrub}
         onPointerCancel={finishScrub}
+        onDoubleClick={(event) => {
+          const target = event.target;
+          if (target instanceof Element && target.closest("[data-edge], [data-draft]")) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          if (event.clientY - bounds.top <= rulerHeight + 4) return;
+          ignoreClick.current = true;
+          openDraft(event.clientX, event.clientY);
+        }}
       >
         <div className="flex cursor-ew-resize" style={{ height: rulerHeight, touchAction: "none" }}>
           {Array.from({ length: totalBars }, (_, index) => {
@@ -1245,16 +1298,58 @@ function Wave({
           })}
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
           {cues.map((cue, index) => {
-            const place = cue.place ?? cue.bar - 1 + 0.35;
-            const y = headerHeight + (cue.y ?? 0.62) * (laneHeight - headerHeight);
+            const lifted = cueLift?.index === index;
+            const place = lifted ? cueLift.place : (cue.place ?? cue.bar - 1 + 0.35);
+            const y = (lifted ? cueLift.y : (cue.y ?? 0.62)) * laneHeight;
             return (
-              <span
+              <button
                 key={`${cue.text}-${index}`}
-                className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-1/2 truncate rounded-full px-2.5 py-1 text-[13px] font-semibold text-[#1A242C] shadow-[0_1px_4px_rgb(0_0_0/0.28)]"
+                type="button"
+                data-cue=""
+                aria-label={`Move ${cue.text}`}
+                className={`absolute z-[15] max-w-[240px] -translate-x-1/2 -translate-y-1/2 truncate rounded-full px-2.5 py-1 text-[13px] font-semibold text-[#1A242C] shadow-[0_1px_4px_rgb(0_0_0/0.28)] ${lifted ? "cursor-grabbing" : "cursor-grab"}`}
                 style={{ left: place * barSize, top: y, backgroundColor: cueColor(cue.text) }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  event.preventDefault();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  const originPlace = cue.place ?? cue.bar - 1 + 0.35;
+                  const originYPos = cue.y ?? 0.62;
+                  cueDrag.current = {
+                    index,
+                    originX: event.clientX,
+                    originY: event.clientY,
+                    originPlace,
+                    originYPos,
+                    place: originPlace,
+                    y: originYPos,
+                  };
+                  setCueLift({ index, place: originPlace, y: originYPos });
+                }}
+                onPointerMove={(event) => {
+                  const current = cueDrag.current;
+                  if (!current || current.index !== index) return;
+                  const place = Math.min(Math.max(current.originPlace + (event.clientX - current.originX) / barSize, 0), Math.max(totalBars - 0.0001, 0));
+                  const nextY = Math.min(Math.max(current.originYPos + (event.clientY - current.originY) / laneHeight, 0.06), 0.94);
+                  current.place = place;
+                  current.y = nextY;
+                  setCueLift({ index, place, y: nextY });
+                }}
+                onPointerUp={() => {
+                  const current = cueDrag.current;
+                  cueDrag.current = null;
+                  setCueLift(null);
+                  if (!current || current.index !== index) return;
+                  onMoveCue(index, current.place, current.y);
+                }}
+                onPointerCancel={() => {
+                  cueDrag.current = null;
+                  setCueLift(null);
+                }}
+                onDoubleClick={(event) => event.stopPropagation()}
               >
                 {cue.text}
-              </span>
+              </button>
             );
           })}
           {boundaries.map((edge) => (
@@ -1298,8 +1393,57 @@ function Wave({
             type="button"
             aria-label="Move the playhead"
             className="absolute inset-0 z-0"
-            onClick={(event) => onSeek(chartAt(event.clientX))}
+            onClick={(event) => {
+              if (ignoreClick.current || event.detail > 1) {
+                ignoreClick.current = false;
+                return;
+              }
+              onSeek(chartAt(event.clientX));
+            }}
           />
+          {draft ? (
+            <form
+              data-draft=""
+              className="absolute z-30 flex -translate-x-1/2 -translate-y-1/2 items-center rounded-full px-1 shadow-[0_2px_8px_rgb(0_0_0/0.35)]"
+              style={{ left: draft.place * barSize, top: draft.y * laneHeight, backgroundColor: cueColor(draft.text) }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                commitDraft();
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <input
+                ref={draftInputRef}
+                aria-label="Cue name"
+                value={draft.text}
+                placeholder="Cue"
+                autoFocus
+                data-draft-id={draft.id}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setDraft((current) => {
+                    if (!current) return current;
+                    const next = { ...current, text };
+                    draftRef.current = next;
+                    return next;
+                  });
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    draftRef.current = null;
+                    setDraft(null);
+                  }
+                }}
+                onBlur={(event) => {
+                  const id = Number(event.currentTarget.dataset.draftId);
+                  if (draftRef.current && draftRef.current.id !== id) return;
+                  commitDraft();
+                }}
+                className="h-7 w-[108px] bg-transparent px-2 text-[13px] font-semibold text-[#1A242C] outline-none placeholder:text-[#1A242C]/45"
+              />
+            </form>
+          ) : null}
         </div>
         <div
           className="pointer-events-none absolute top-0 z-10 drop-shadow-[0_0_1px_rgb(0_0_0/0.55)]"
@@ -1584,7 +1728,7 @@ function peaksFrom(buffer: AudioBuffer, count: number) {
 
 function ReadyBar({ percent }: { percent: number }) {
   return (
-    <div className="mt-3 flex shrink-0 items-center gap-2.5">
+    <div className="mt-1 flex h-4 shrink-0 items-center gap-2">
       <div
         className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-ink/15"
         role="progressbar"
@@ -1595,7 +1739,7 @@ function ReadyBar({ percent }: { percent: number }) {
       >
         <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
       </div>
-      <span className="w-11 text-right text-[13px] font-semibold text-muted tabular-nums">{percent}%</span>
+      <span className="w-9 text-right text-[12px] font-semibold leading-none text-muted tabular-nums">{percent}%</span>
     </div>
   );
 }
