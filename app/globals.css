@@ -39,3 +39,15 @@
   --color-disabled: var(--disabled);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+
+*,
+*::before,
+*::after {
+  outline: none;
+}
+
+:focus,
+:focus-visible {
+  outline: none;
+  --tw-ring-shadow: 0 0 #0000;
+}

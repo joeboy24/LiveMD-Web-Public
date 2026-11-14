@@ -78,6 +78,7 @@ export function Arrangement({
   const guideKeyRef = useRef(song.guideKey);
   const playheadRef = useRef(0);
   const barSizeRef = useRef(fullBarWidth);
+  const revealRef = useRef<(chart: number) => void>(() => {});
   const spokenRef = useRef<Array<{ bar: number; place: number; text: string }>>([]);
   const heardBarsRef = useRef<number | null>(null);
   const scrubbingRef = useRef(false);
@@ -881,6 +882,7 @@ export function Arrangement({
                   playhead={Math.min(playhead, totalBars - 0.0001)}
                   waveScale={waveScale}
                   barSizeRef={barSizeRef}
+                  revealRef={revealRef}
                   selectedBar={shownBar}
                   onSeek={(chart) => placeHead(chart, true)}
                   onScrub={scrubTo}
@@ -898,6 +900,26 @@ export function Arrangement({
                     onDelete={deleteLayer}
                   />
                 ) : null}
+              </div>
+              <div data-cue-strip="" className="mt-2 flex h-[18px] overflow-hidden rounded-[4px] bg-[#3A4450] in-data-[theme=light]:bg-[#D7DEE5]">
+                {cues
+                  .map((cue, index) => ({ cue, index, place: cue.place ?? cue.bar - 1 + 0.35 }))
+                  .sort((left, right) => left.place - right.place)
+                  .map(({ cue, index, place }) => (
+                    <button
+                      key={`${cue.text}-${index}`}
+                      type="button"
+                      aria-label={`Jump to ${cue.text}`}
+                      className="m-0 h-full shrink-0 truncate border-0 px-2 text-[12px] leading-none font-semibold whitespace-nowrap text-[#1A242C]"
+                      style={{ backgroundColor: cueColor(cue.text) }}
+                      onClick={() => {
+                        revealRef.current(place);
+                        placeHead(place, true);
+                      }}
+                    >
+                      {cue.text}
+                    </button>
+                  ))}
               </div>
               <div className="mt-3 shrink-0 rounded-xl bg-surface p-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1090,6 +1112,7 @@ function Wave({
   playhead,
   waveScale,
   barSizeRef,
+  revealRef,
   selectedBar,
   onSeek,
   onScrub,
@@ -1107,6 +1130,7 @@ function Wave({
   playhead: number;
   waveScale: number;
   barSizeRef: RefObject<number>;
+  revealRef: RefObject<(chart: number) => void>;
   selectedBar: number;
   onSeek: (chart: number) => void;
   onScrub: (chart: number) => void;
@@ -1255,7 +1279,7 @@ function Wave({
 
   function beginScrub(event: ReactPointerEvent<HTMLDivElement>) {
     const target = event.target;
-    if (target instanceof Element && target.closest("[data-draft], [data-cue], [data-edge]")) return;
+    if (target instanceof Element && target.closest("[data-draft], [data-cue], [data-edge], [data-cue-strip]")) return;
     if (draftRef.current) {
       commitDraft();
       ignoreClick.current = true;
@@ -1292,6 +1316,8 @@ function Wave({
     onScrubEnd();
   }
 
+  revealRef.current = keepVisible;
+
   return (
     <div ref={frameRef} className="min-w-0 flex-1 overflow-x-auto rounded-r-[14px] bg-background">
       <div
@@ -1304,7 +1330,7 @@ function Wave({
         onPointerCancel={finishScrub}
         onDoubleClick={(event) => {
           const target = event.target;
-          if (target instanceof Element && target.closest("[data-edge], [data-draft]")) return;
+          if (target instanceof Element && target.closest("[data-edge], [data-draft], [data-cue-strip]")) return;
           const bounds = event.currentTarget.getBoundingClientRect();
           if (event.clientY - bounds.top <= rulerHeight + 4) return;
           ignoreClick.current = true;
