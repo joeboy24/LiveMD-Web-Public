@@ -4,6 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import { Field, TextArea } from "../components/field";
 import { ImportRow } from "../components/import-row";
 import { signUpload } from "./actions";
+import { suggestTempo } from "./tempo";
 import type { FormState, Song } from "./types";
 
 const keys = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
@@ -25,9 +26,30 @@ export function SongForm({
   const [trackOne, setTrackOne] = useState<File | null>(null);
   const [trackTwo, setTrackTwo] = useState<File | null>(null);
   const [guide, setGuide] = useState<File | null>(null);
+  const [suggested, setSuggested] = useState<number | null>(null);
+  const [checking, setChecking] = useState(false);
+  const tempoOverride = useRef<number | null>(null);
+  const ignored = useRef<{ fileKey: string; tempo: number } | null>(null);
   const ready = title.trim().length > 0;
   const uploading = Boolean(trackOne || trackTwo || guide);
   const [state, formAction, pending] = useActionState(async (previous: FormState, formData: FormData) => {
+    if (tempoOverride.current !== null) {
+      formData.set("tempo", String(tempoOverride.current));
+      tempoOverride.current = null;
+    } else if (trackOne) {
+      const key = fileKey(trackOne);
+      const entered = Number(formData.get("tempo"));
+      const skipped = ignored.current?.fileKey === key && ignored.current.tempo === entered;
+      if (!skipped) {
+        setChecking(true);
+        const offer = await suggestTempo(trackOne, entered);
+        setChecking(false);
+        if (offer !== null) {
+          setSuggested(offer);
+          return { error: null };
+        }
+      }
+    }
     try {
       if (trackOne) formData.set("stemKey", await uploadAudio(showId, trackOne));
       if (trackTwo) formData.set("trackKey", await uploadAudio(showId, trackTwo));
@@ -44,10 +66,18 @@ export function SongForm({
       setTrackOne(null);
       setTrackTwo(null);
       setGuide(null);
+      setSuggested(null);
+      ignored.current = null;
       if (result.song) onSaved?.(result.song);
     }
     return result;
   }, initialState);
+
+  function changeTempo(next: number) {
+    setTempo(next);
+    setSuggested(null);
+    ignored.current = null;
+  }
 
   return (
     <form ref={formRef} action={formAction}>
@@ -63,18 +93,27 @@ export function SongForm({
         required
       />
       <div className="mt-3 grid gap-3">
-        <ImportRow label="Track 1" empty="Choose track" fileName={trackOne?.name ?? ""} onFile={setTrackOne} />
+        <ImportRow
+          label="Track 1"
+          empty="Choose track"
+          fileName={trackOne?.name ?? ""}
+          onFile={(file) => {
+            setTrackOne(file);
+            setSuggested(null);
+            ignored.current = null;
+          }}
+        />
         <ImportRow label="Track 2" empty="Choose track" fileName={trackTwo?.name ?? ""} onFile={setTrackTwo} />
         <ImportRow label="Guide/Cues" empty="Add a guide" fileName={guide?.name ?? ""} onFile={setGuide} />
       </div>
       <div className="mt-4 flex items-center gap-3">
         <span className="text-[16px] font-semibold text-ink">Tempo</span>
         <span className="ml-auto flex items-center gap-2">
-          <StepButton label="Slower" onClick={() => setTempo((value) => Math.max(40, value - 1))}>
+          <StepButton label="Slower" onClick={() => changeTempo(Math.max(40, tempo - 1))}>
             −
           </StepButton>
           <span className="w-[88px] text-center text-[16px] font-semibold text-ink">{tempo} BPM</span>
-          <StepButton label="Faster" onClick={() => setTempo((value) => Math.min(240, value + 1))}>
+          <StepButton label="Faster" onClick={() => changeTempo(Math.min(240, tempo + 1))}>
             +
           </StepButton>
         </span>
@@ -97,18 +136,46 @@ export function SongForm({
         </select>
       </div>
       <input type="hidden" name="tempo" value={tempo} />
+      {suggested !== null ? (
+        <div className="mt-3 flex min-h-11 items-center gap-2 rounded-xl bg-surface px-3">
+          <span className="min-w-0 flex-1 text-[15px] font-semibold text-ink">Tempo {suggested}</span>
+          <button
+            type="button"
+            onClick={() => {
+              tempoOverride.current = suggested;
+              setTempo(suggested);
+              setSuggested(null);
+              if (formRef.current) formAction(new FormData(formRef.current));
+            }}
+            className="h-8 rounded-full bg-primary px-3 text-[14px] font-semibold text-white"
+          >
+            Accept
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (trackOne) ignored.current = { fileKey: fileKey(trackOne), tempo };
+              setSuggested(null);
+              if (formRef.current) formAction(new FormData(formRef.current));
+            }}
+            className="h-8 rounded-full bg-surface-elevated px-3 text-[14px] font-semibold text-ink"
+          >
+            Ignore
+          </button>
+        </div>
+      ) : null}
       <TextArea className="mt-4" label="Lyrics" name="lyrics" tone="surface" rows={4} placeholder="Paste lyrics here" />
       {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
       <button
         type="submit"
-        disabled={pending || !ready}
+        disabled={pending || !ready || suggested !== null}
         className={
-          ready
+          ready && suggested === null
             ? "mt-4 h-[52px] w-full rounded-xl bg-primary text-[17px] font-semibold text-white outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover"
             : "mt-4 h-[52px] w-full rounded-xl bg-surface text-[17px] font-semibold text-disabled outline-none"
         }
       >
-        {pending ? (uploading ? "Uploading…" : "Saving…") : "Add to setlist"}
+        {pending ? (checking ? "Checking tempo…" : uploading ? "Uploading…" : "Saving…") : "Add to setlist"}
       </button>
     </form>
   );
@@ -129,6 +196,10 @@ async function uploadAudio(showId: string, file: File) {
   });
   if (!response.ok) throw new Error("The audio didn't upload.");
   return signed.key;
+}
+
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
 function StepButton({ label, onClick, children }: { label: string; onClick: () => void; children: string }) {

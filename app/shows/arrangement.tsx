@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, ty
 import { RowMenu } from "../components/row-menu";
 import { readAudio, saveArrangement, saveStemLayers, signUpload } from "./actions";
 import { THEME_EVENT } from "../theme";
+import { makeClickBuffer } from "./click-track";
 import { barLabel, cueColor, encodeSectionLyrics, lyricBlocks, moreSectionNames, sectionAtBar, sectionColor, sectionNames } from "./structure";
 import type { Song, SongCue, SongSection } from "./types";
 
@@ -84,6 +85,8 @@ export function Arrangement({
   const scrubbingRef = useRef(false);
   const totalRef = useRef(1);
   const bufferRef = useRef<AudioBuffer | null>(null);
+  const clickRef = useRef<AudioBuffer | null>(null);
+  const clickKeyRef = useRef("");
   const audioRef = useRef<AudioContext | null>(null);
   const layersRef = useRef<LoadedLayer[]>([]);
   const sourcesRef = useRef<Array<{ id: string; source: AudioBufferSourceNode }>>([]);
@@ -534,6 +537,15 @@ export function Arrangement({
       source.start(context.currentTime + delay, offset);
       sources.push({ id: layer.id, source });
     }
+    const click = clickBuffer(context);
+    const clickOffset = Math.min(Math.max(chart * barSeconds(), 0), Math.max(click.duration - 0.02, 0));
+    if (click.duration - clickOffset > 0.02) {
+      const source = context.createBufferSource();
+      source.buffer = click;
+      source.connect(gainFor("click", context, ids));
+      source.start(context.currentTime, clickOffset);
+      sources.push({ id: "click", source });
+    }
     sourcesRef.current = sources;
     playRef.current = { contextTime: context.currentTime, chart };
     playingRef.current = true;
@@ -553,8 +565,20 @@ export function Arrangement({
       node.connect(context.destination);
       gainsRef.current.set(id, node);
     }
-    node.gain.value = layerGain(id, mixRef.current, ids);
+    node.gain.value = id === "click" ? busGain(mixRef.current.click, mixRef.current) : layerGain(id, mixRef.current, ids);
     return node;
+  }
+
+  function clickBuffer(context: AudioContext) {
+    const bars = Math.max(totalRef.current, 1);
+    const beats = Math.max(song.beatsPerBar, 1);
+    const tempo = Math.max(song.tempo, 1);
+    const key = `${context.sampleRate}|${bars}|${beats}|${tempo}`;
+    if (clickRef.current && clickKeyRef.current === key) return clickRef.current;
+    const buffer = makeClickBuffer(context, bars, beats, tempo);
+    clickRef.current = buffer;
+    clickKeyRef.current = key;
+    return buffer;
   }
 
   async function beginPlay() {
@@ -588,6 +612,27 @@ export function Arrangement({
     placeHead(0, false);
   }
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+        if (target.closest("[role=menu]")) return;
+      }
+      if (event.key === " ") {
+        event.preventDefault();
+        togglePlay();
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        stop();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   function toggleLoop() {
     setLooping((on) => {
       const next = !on;
@@ -602,7 +647,9 @@ export function Arrangement({
 
   useEffect(() => {
     const ids = layersRef.current.map((layer) => layer.id);
-    for (const [id, node] of gainsRef.current) node.gain.value = layerGain(id, mix, ids);
+    for (const [id, node] of gainsRef.current) {
+      node.gain.value = id === "click" ? busGain(mix.click, mix) : layerGain(id, mix, ids);
+    }
     if (busGain(mix.cues, mix) <= 0.001) window.speechSynthesis?.cancel();
   }, [mix]);
 
