@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { SiteHeader } from "./components/site-header";
+import { Suspense } from "react";
+import { IconRail } from "./components/icon-rail";
+import { HeaderFallback, SiteHeader } from "./components/site-header";
+import { ShowSidebar } from "./shows/show-sidebar";
 import { THEME_KEY } from "./theme";
 import "./globals.css";
 
@@ -14,12 +17,23 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
-      <body className="min-h-full bg-background font-sans text-ink antialiased">
+      <body className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background font-sans text-ink antialiased">
         <Script id="livemd-theme" strategy="beforeInteractive">
           {themeScript}
         </Script>
-        <SiteHeader />
-        <main className="mx-auto w-full max-w-5xl px-5 py-6 sm:px-7">{children}</main>
+        <Suspense fallback={<HeaderFallback />}>
+          <SiteHeader />
+        </Suspense>
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[290px_minmax(0,3fr)_minmax(180px,1fr)_3.25rem] md:overflow-hidden">
+          <aside className="flex min-h-0 flex-col px-4 pt-4 md:h-full md:overflow-hidden md:border-r md:border-surface-elevated md:px-3 md:py-4">
+            <Suspense fallback={<p className="text-base text-muted">Loading shows.</p>}>
+              <ShowSidebar />
+            </Suspense>
+          </aside>
+          <main className="min-h-0 px-4 py-4 md:overflow-y-auto md:px-6">{children}</main>
+          <aside aria-label="Chat and todos" className="hidden min-h-0 border-l border-surface-elevated md:block" />
+          <IconRail />
+        </div>
       </body>
     </html>
   );

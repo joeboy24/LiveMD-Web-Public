@@ -17,7 +17,7 @@ export function ThemeSwitch() {
   const theme = useSyncExternalStore(subscribe, readTheme, () => "dark" as const);
 
   return (
-    <div className="ml-auto flex rounded-[9px] bg-surface-elevated p-0.5" role="group" aria-label="Theme">
+    <div className="flex rounded-[9px] bg-background p-0.5" role="group" aria-label="Appearance">
       {options.map((option) => {
         const selected = theme === option.value;
         return (
