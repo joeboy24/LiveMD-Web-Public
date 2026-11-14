@@ -74,16 +74,16 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
     <section className="flex h-full flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-[18px] font-bold text-ink">Shows</h1>
+        <h1 className="text-[17px] font-bold text-ink">Shows</h1>
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="rounded-lg text-[14px] font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
+          className="rounded-lg text-[13px] font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
         >
           Add Setlist
         </button>
       </div>
-      <div className="mt-3">
+      <div className="mt-1">
         <SearchField value={query} onChange={onSearch} label="Search shows" placeholder="Search shows" />
       </div>
       {visible.length === 0 ? (

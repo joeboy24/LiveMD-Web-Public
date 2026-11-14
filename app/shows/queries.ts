@@ -30,7 +30,10 @@ export async function listSongs(showId: string): Promise<Song[]> {
       key,
       lead_beats as "leadBeats",
       slip_bars as "slipBars",
-      lyrics
+      lyrics,
+      stem_key as "stemKey",
+      guide_key as "guideKey",
+      track_keys as "trackKeys"
     from songs
     where show_id = ${showId}
     order by created_at asc
@@ -44,7 +47,23 @@ export async function listSongs(showId: string): Promise<Song[]> {
     leadBeats: Number(row.leadBeats),
     slipBars: Number(row.slipBars),
     lyrics: String(row.lyrics ?? ""),
+    stemKey: row.stemKey == null ? null : String(row.stemKey),
+    guideKey: row.guideKey == null ? null : String(row.guideKey),
+    trackKeys: trackKeysFrom(row.trackKeys),
   }));
+}
+
+function trackKeysFrom(value: unknown) {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function showDate(value: unknown) {

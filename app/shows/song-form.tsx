@@ -3,15 +3,18 @@
 import { useActionState, useRef, useState } from "react";
 import { Field, TextArea } from "../components/field";
 import { ImportRow } from "../components/import-row";
+import { signUpload } from "./actions";
 import type { FormState, Song } from "./types";
 
 const keys = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 const initialState: FormState = { error: null };
 
 export function SongForm({
+  showId,
   action,
   onSaved,
 }: {
+  showId: string;
   action: (state: FormState, formData: FormData) => Promise<FormState>;
   onSaved?: (song: Song) => void;
 }) {
@@ -19,20 +22,28 @@ export function SongForm({
   const [title, setTitle] = useState("");
   const [tempo, setTempo] = useState(120);
   const [key, setKey] = useState("");
-  const [trackOne, setTrackOne] = useState("");
-  const [trackTwo, setTrackTwo] = useState("");
-  const [guide, setGuide] = useState("");
+  const [trackOne, setTrackOne] = useState<File | null>(null);
+  const [trackTwo, setTrackTwo] = useState<File | null>(null);
+  const [guide, setGuide] = useState<File | null>(null);
   const ready = title.trim().length > 0;
+  const uploading = Boolean(trackOne || trackTwo || guide);
   const [state, formAction, pending] = useActionState(async (previous: FormState, formData: FormData) => {
+    try {
+      if (trackOne) formData.set("stemKey", await uploadAudio(showId, trackOne));
+      if (trackTwo) formData.set("trackKey", await uploadAudio(showId, trackTwo));
+      if (guide) formData.set("guideKey", await uploadAudio(showId, guide));
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "The audio didn't upload." };
+    }
     const result = await action(previous, formData);
     if (result.saved) {
       formRef.current?.reset();
       setTitle("");
       setTempo(120);
       setKey("");
-      setTrackOne("");
-      setTrackTwo("");
-      setGuide("");
+      setTrackOne(null);
+      setTrackTwo(null);
+      setGuide(null);
       if (result.song) onSaved?.(result.song);
     }
     return result;
@@ -52,9 +63,9 @@ export function SongForm({
         required
       />
       <div className="mt-3 grid gap-3">
-        <ImportRow label="Track 1" empty="Choose track" fileName={trackOne} onFile={(file) => setTrackOne(file?.name ?? "")} />
-        <ImportRow label="Track 2" empty="Choose track" fileName={trackTwo} onFile={(file) => setTrackTwo(file?.name ?? "")} />
-        <ImportRow label="Guide/Cues" empty="Add a guide" fileName={guide} onFile={(file) => setGuide(file?.name ?? "")} />
+        <ImportRow label="Track 1" empty="Choose track" fileName={trackOne?.name ?? ""} onFile={setTrackOne} />
+        <ImportRow label="Track 2" empty="Choose track" fileName={trackTwo?.name ?? ""} onFile={setTrackTwo} />
+        <ImportRow label="Guide/Cues" empty="Add a guide" fileName={guide?.name ?? ""} onFile={setGuide} />
       </div>
       <div className="mt-4 flex items-center gap-3">
         <span className="text-[16px] font-semibold text-ink">Tempo</span>
@@ -97,10 +108,27 @@ export function SongForm({
             : "mt-4 h-[52px] w-full rounded-xl bg-surface text-[17px] font-semibold text-disabled outline-none"
         }
       >
-        {pending ? "Saving…" : "Add to setlist"}
+        {pending ? (uploading ? "Uploading…" : "Saving…") : "Add to setlist"}
       </button>
     </form>
   );
+}
+
+async function uploadAudio(showId: string, file: File) {
+  const signed = await signUpload({
+    showId,
+    fileName: file.name,
+    contentType: file.type,
+    size: file.size,
+  });
+  if ("error" in signed) throw new Error(signed.error);
+  const response = await fetch(signed.url, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": signed.contentType },
+  });
+  if (!response.ok) throw new Error("The audio didn't upload.");
+  return signed.key;
 }
 
 function StepButton({ label, onClick, children }: { label: string; onClick: () => void; children: string }) {

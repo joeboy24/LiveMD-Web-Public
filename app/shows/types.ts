@@ -18,6 +18,9 @@ export type Song = {
   leadBeats: number;
   slipBars: number;
   lyrics: string;
+  stemKey: string | null;
+  guideKey: string | null;
+  trackKeys: string[];
 };
 
 export type ShowSnapshot = {

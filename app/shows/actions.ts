@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSql } from "../db";
+import { ownedAudioKey, signAudioUpload } from "./storage";
 import type { FormState, ShowSnapshot, Song } from "./types";
 
 export async function createShow(_state: FormState, formData: FormData): Promise<FormState> {
@@ -48,10 +49,19 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
   if (slipBars == null || !Number.isInteger(slipBars) || slipBars < 0) {
     return { error: "Slip has to be a whole number of bars." };
   }
+  const stemKey = ownedAudioKey(showId, formData.get("stemKey"));
+  const guideKey = ownedAudioKey(showId, formData.get("guideKey"));
+  const trackKey = ownedAudioKey(showId, formData.get("trackKey"));
+  if (stemKey === undefined || guideKey === undefined || trackKey === undefined) {
+    return { error: "That audio file didn't upload." };
+  }
+  const trackKeys = trackKey ? [trackKey] : [];
 
   const sql = getSql();
   const rows = await sql`
-    insert into songs (show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics)
+    insert into songs (
+      show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics, stem_key, guide_key, track_keys
+    )
     values (
       ${showId},
       ${title},
@@ -60,9 +70,14 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
       ${key || null},
       ${leadBeats},
       ${slipBars},
-      ${lyrics}
+      ${lyrics},
+      ${stemKey},
+      ${guideKey},
+      ${JSON.stringify(trackKeys)}::jsonb
     )
-    returning id, title, tempo, beats_per_bar as "beatsPerBar", key, lead_beats as "leadBeats", slip_bars as "slipBars", lyrics
+    returning
+      id, title, tempo, beats_per_bar as "beatsPerBar", key, lead_beats as "leadBeats",
+      slip_bars as "slipBars", lyrics, stem_key as "stemKey", guide_key as "guideKey", track_keys as "trackKeys"
   `;
   revalidatePath("/", "layout");
   return { error: null, saved: true, song: songFromRow(rows[0]) };
@@ -71,7 +86,9 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
 export async function restoreSong(showId: string, song: Song) {
   const sql = getSql();
   await sql`
-    insert into songs (id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics)
+    insert into songs (
+      id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics, stem_key, guide_key, track_keys
+    )
     values (
       ${song.id},
       ${showId},
@@ -81,10 +98,17 @@ export async function restoreSong(showId: string, song: Song) {
       ${song.key},
       ${song.leadBeats},
       ${song.slipBars},
-      ${song.lyrics}
+      ${song.lyrics},
+      ${song.stemKey},
+      ${song.guideKey},
+      ${JSON.stringify(song.trackKeys ?? [])}::jsonb
     )
   `;
   revalidatePath("/", "layout");
+}
+
+export async function signUpload(input: { showId: string; fileName: string; contentType: string; size: number }) {
+  return signAudioUpload(input.showId, input.fileName, input.contentType, Number(input.size));
 }
 
 export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
@@ -106,6 +130,9 @@ export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
       lead_beats as "leadBeats",
       slip_bars as "slipBars",
       lyrics,
+      stem_key as "stemKey",
+      guide_key as "guideKey",
+      track_keys as "trackKeys",
       created_at::text as "createdAt"
     from songs
     where show_id = ${showId}
@@ -134,7 +161,10 @@ export async function restoreShow(show: ShowSnapshot) {
   `;
   for (const song of show.songs) {
     await sql`
-      insert into songs (id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics, created_at)
+      insert into songs (
+        id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
+        stem_key, guide_key, track_keys, created_at
+      )
       values (
         ${song.id},
         ${show.id},
@@ -145,6 +175,9 @@ export async function restoreShow(show: ShowSnapshot) {
         ${song.leadBeats},
         ${song.slipBars},
         ${song.lyrics},
+        ${song.stemKey},
+        ${song.guideKey},
+        ${JSON.stringify(song.trackKeys ?? [])}::jsonb,
         ${song.createdAt}::timestamptz
       )
     `;
@@ -168,7 +201,23 @@ function songFromRow(row: Record<string, unknown>): Song {
     leadBeats: Number(row.leadBeats),
     slipBars: Number(row.slipBars),
     lyrics: String(row.lyrics ?? ""),
+    stemKey: row.stemKey == null ? null : String(row.stemKey),
+    guideKey: row.guideKey == null ? null : String(row.guideKey),
+    trackKeys: trackKeysFrom(row.trackKeys),
   };
+}
+
+function trackKeysFrom(value: unknown) {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function numberValue(value: FormDataEntryValue | null) {

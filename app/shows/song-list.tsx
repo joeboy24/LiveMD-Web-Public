@@ -57,6 +57,7 @@ export function SongList({ showId, songs }: { showId: string; songs: Song[] }) {
       {adding ? (
         <Modal title="Add song" tone="background" onClose={() => setAdding(false)}>
           <SongForm
+            showId={showId}
             action={createSong.bind(null, showId)}
             onSaved={(song) => {
               setAdding(false);

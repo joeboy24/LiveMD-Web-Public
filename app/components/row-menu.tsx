@@ -59,7 +59,7 @@ export function RowMenu({
               ref={panelRef}
               role="menu"
               style={{ top: box.top, right: box.right }}
-              className="fixed z-30 min-w-[7.5rem] rounded-xl bg-surface-elevated py-1 shadow-[0_12px_28px_rgb(0_0_0/0.4)]"
+              className="fixed z-30 min-w-[7.5rem] overflow-hidden rounded-xl bg-surface-elevated py-1 shadow-[0_12px_28px_rgb(0_0_0/0.4)]"
             >
               {items.map((item) => (
                 <button
