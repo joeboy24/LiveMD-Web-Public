@@ -1,7 +1,8 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { RowMenu } from "../components/row-menu";
+import { Arrangement } from "./arrangement";
 import { useSetlistHistory } from "./history";
 import { SongList } from "./song-list";
 import type { Song } from "./types";
@@ -20,9 +21,26 @@ export function SongPanel({
   songs: Song[];
 }) {
   const history = useSetlistHistory();
+  const [arrangingId, setArrangingId] = useState<string | null>(null);
+  const arranging = songs.find((song) => song.id === arrangingId);
+
+  if (arranging) {
+    return (
+      <section className="flex min-h-0 flex-1 flex-col">
+        <Arrangement
+          key={arranging.id}
+          showId={showId}
+          song={arranging}
+          songs={songs}
+          onClose={() => setArrangingId(null)}
+          onOpen={setArrangingId}
+        />
+      </section>
+    );
+  }
 
   return (
-    <section>
+    <section className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h2 className="truncate text-[22px] font-bold text-ink">{title}</h2>
@@ -49,7 +67,7 @@ export function SongPanel({
           />
         </div>
       </div>
-      <SongList showId={showId} songs={songs} />
+      <SongList showId={showId} songs={songs} onArrange={setArrangingId} />
     </section>
   );
 }

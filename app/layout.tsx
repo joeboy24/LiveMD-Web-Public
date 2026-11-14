@@ -32,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <ShowSidebar />
             </Suspense>
           </aside>
-          <main className="min-h-0 px-4 py-4 md:overflow-y-auto md:px-6">{children}</main>
+          <main className="flex min-h-0 flex-col overflow-y-auto px-4 py-4 md:overflow-hidden md:px-6">{children}</main>
           <aside aria-label="Chat and todos" className="hidden min-h-0 border-l border-surface-elevated md:block" />
           <IconRail />
         </div>

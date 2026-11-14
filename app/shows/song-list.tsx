@@ -9,7 +9,15 @@ import { songLine } from "./format";
 import { SongForm } from "./song-form";
 import type { Song } from "./types";
 
-export function SongList({ showId, songs }: { showId: string; songs: Song[] }) {
+export function SongList({
+  showId,
+  songs,
+  onArrange,
+}: {
+  showId: string;
+  songs: Song[];
+  onArrange: (songId: string) => void;
+}) {
   const history = useSetlistHistory();
   const [adding, setAdding] = useState(false);
   const slots = songs.length + 1;
@@ -45,7 +53,7 @@ export function SongList({ showId, songs }: { showId: string; songs: Song[] }) {
               <RowMenu
                 label={`${song.title} actions`}
                 items={[
-                  { label: "Arrangement" },
+                  { label: "Arrangement", onSelect: () => onArrange(song.id) },
                   { label: "Download", disabled: true },
                   { label: "Delete", onSelect: () => void history.removeSong(showId, song) },
                 ]}

@@ -1,4 +1,5 @@
 import { getSql } from "../db";
+import { parseCues, parseSections } from "./structure";
 import type { Show, Song } from "./types";
 
 export async function listShows(): Promise<Show[]> {
@@ -31,6 +32,8 @@ export async function listSongs(showId: string): Promise<Song[]> {
       lead_beats as "leadBeats",
       slip_bars as "slipBars",
       lyrics,
+      sections,
+      cues,
       stem_key as "stemKey",
       guide_key as "guideKey",
       track_keys as "trackKeys"
@@ -50,6 +53,8 @@ export async function listSongs(showId: string): Promise<Song[]> {
     stemKey: row.stemKey == null ? null : String(row.stemKey),
     guideKey: row.guideKey == null ? null : String(row.guideKey),
     trackKeys: trackKeysFrom(row.trackKeys),
+    sections: parseSections(row.sections),
+    cues: parseCues(row.cues),
   }));
 }
 

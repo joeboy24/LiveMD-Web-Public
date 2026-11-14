@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { getSql } from "../db";
-import { ownedAudioKey, signAudioUpload } from "./storage";
-import type { FormState, ShowSnapshot, Song } from "./types";
+import { parseCues, parseSections } from "./structure";
+import { ownedAudioKey, signAudioRead, signAudioUpload } from "./storage";
+import type { FormState, ShowSnapshot, Song, SongCue, SongSection } from "./types";
 
 export async function createShow(_state: FormState, formData: FormData): Promise<FormState> {
   const title = String(formData.get("title") ?? "").trim();
@@ -87,7 +88,8 @@ export async function restoreSong(showId: string, song: Song) {
   const sql = getSql();
   await sql`
     insert into songs (
-      id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics, stem_key, guide_key, track_keys
+      id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
+      stem_key, guide_key, track_keys, sections, cues
     )
     values (
       ${song.id},
@@ -101,7 +103,9 @@ export async function restoreSong(showId: string, song: Song) {
       ${song.lyrics},
       ${song.stemKey},
       ${song.guideKey},
-      ${JSON.stringify(song.trackKeys ?? [])}::jsonb
+      ${JSON.stringify(song.trackKeys ?? [])}::jsonb,
+      ${JSON.stringify(song.sections ?? [])}::jsonb,
+      ${JSON.stringify(song.cues ?? [])}::jsonb
     )
   `;
   revalidatePath("/", "layout");
@@ -109,6 +113,45 @@ export async function restoreSong(showId: string, song: Song) {
 
 export async function signUpload(input: { showId: string; fileName: string; contentType: string; size: number }) {
   return signAudioUpload(input.showId, input.fileName, input.contentType, Number(input.size));
+}
+
+export async function readAudio(showId: string, key: string) {
+  return signAudioRead(showId, key);
+}
+
+export async function saveArrangement(
+  showId: string,
+  songId: string,
+  sections: SongSection[],
+  cues: SongCue[],
+  leadBeats: number,
+  slipBars: number,
+  lyrics: string,
+) {
+  const cleanSections = parseSections(sections);
+  const cleanCues = parseCues(cues);
+  if (!cleanSections.length || cleanSections.length !== sections.length || cleanCues.length !== cues.length) {
+    return { error: "Those sections didn't save." };
+  }
+  if (cleanSections.length > 80 || cleanCues.length > 200) return { error: "That arrangement is too long." };
+  if (!Number.isFinite(leadBeats) || !Number.isInteger(slipBars) || slipBars < 0 || slipBars > 80) {
+    return { error: "Those sections didn't save." };
+  }
+
+  const sql = getSql();
+  const rows = await sql`
+    update songs
+    set sections = ${JSON.stringify(cleanSections)}::jsonb,
+        cues = ${JSON.stringify(cleanCues)}::jsonb,
+        lead_beats = ${leadBeats},
+        slip_bars = ${slipBars},
+        lyrics = ${lyrics.slice(0, 20000)}
+    where id = ${songId} and show_id = ${showId}
+    returning id
+  `;
+  if (!rows[0]) return { error: "That song is missing." };
+  revalidatePath("/", "layout");
+  return { error: null as string | null };
 }
 
 export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
@@ -130,6 +173,8 @@ export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
       lead_beats as "leadBeats",
       slip_bars as "slipBars",
       lyrics,
+      sections,
+      cues,
       stem_key as "stemKey",
       guide_key as "guideKey",
       track_keys as "trackKeys",
@@ -163,7 +208,7 @@ export async function restoreShow(show: ShowSnapshot) {
     await sql`
       insert into songs (
         id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
-        stem_key, guide_key, track_keys, created_at
+        stem_key, guide_key, track_keys, sections, cues, created_at
       )
       values (
         ${song.id},
@@ -178,6 +223,8 @@ export async function restoreShow(show: ShowSnapshot) {
         ${song.stemKey},
         ${song.guideKey},
         ${JSON.stringify(song.trackKeys ?? [])}::jsonb,
+        ${JSON.stringify(song.sections ?? [])}::jsonb,
+        ${JSON.stringify(song.cues ?? [])}::jsonb,
         ${song.createdAt}::timestamptz
       )
     `;
@@ -204,6 +251,8 @@ function songFromRow(row: Record<string, unknown>): Song {
     stemKey: row.stemKey == null ? null : String(row.stemKey),
     guideKey: row.guideKey == null ? null : String(row.guideKey),
     trackKeys: trackKeysFrom(row.trackKeys),
+    sections: parseSections(row.sections),
+    cues: parseCues(row.cues),
   };
 }
 

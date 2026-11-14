@@ -9,6 +9,21 @@ export type Show = {
   ipadUpdate: boolean;
 };
 
+export type SongSection = {
+  name: string;
+  bars: number;
+  sourceIndex: number | null;
+  sourceStartBar: number | null;
+  sourceBars: number | null;
+};
+
+export type SongCue = {
+  bar: number;
+  text: string;
+  place: number | null;
+  y: number | null;
+};
+
 export type Song = {
   id: string;
   title: string;
@@ -21,6 +36,8 @@ export type Song = {
   stemKey: string | null;
   guideKey: string | null;
   trackKeys: string[];
+  sections: SongSection[];
+  cues: SongCue[];
 };
 
 export type ShowSnapshot = {

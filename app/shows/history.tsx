@@ -61,9 +61,12 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
       else await restoreSong(change.showId, change.song);
       return;
     }
-    const removing = change.kind === "delete-show" ? !reverse : reverse;
-    if (removing) await dropShow(change, change.reopen || change.kind === "add-show");
-    else await openShow(change, change.reopen || change.kind === "add-show");
+    if (change.kind === "delete-show" || change.kind === "add-show") {
+      const removing = change.kind === "delete-show" ? !reverse : reverse;
+      const enter = change.reopen || change.kind === "add-show";
+      if (removing) await dropShow(change, enter);
+      else await openShow(change, enter);
+    }
   }
 
   async function undo() {
