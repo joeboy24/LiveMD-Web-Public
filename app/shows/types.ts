@@ -24,6 +24,7 @@ export type PublishedSong = {
   guideKey: string | null;
   trackKeys: string[];
   mix: SongMix;
+  stage: SongStage;
   position: number;
 };
 
@@ -63,6 +64,19 @@ export type SongMix = {
   layers: Record<string, MixChannel>;
 };
 
+export type SongRoute = {
+  click: number;
+  stems: number;
+  guide: number;
+};
+
+export type SongStage = {
+  pitch: number;
+  route: SongRoute;
+  applyStem: boolean;
+  sourceTempo: number | null;
+};
+
 export type Song = {
   id: string;
   title: string;
@@ -78,6 +92,7 @@ export type Song = {
   sections: SongSection[];
   cues: SongCue[];
   mix: SongMix;
+  stage: SongStage;
   position: number;
 };
 

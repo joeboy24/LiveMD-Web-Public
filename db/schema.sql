@@ -23,6 +23,7 @@ create table if not exists songs (
   guide_key text,
   track_keys jsonb not null default '[]'::jsonb,
   mix jsonb,
+  stage jsonb,
   position integer not null default 0,
   created_at timestamptz not null default now()
 );

@@ -1,5 +1,6 @@
 import { getSql } from "../db";
 import { storedMix } from "./mix";
+import { storedStage } from "./stage";
 import { publishedShow, snapshotSongs } from "./publication";
 import { parseCues, parseSections } from "./structure";
 import type { PublishedShow, Show, Song } from "./types";
@@ -66,6 +67,7 @@ export async function listSongs(showId: string): Promise<Song[]> {
       guide_key as "guideKey",
       track_keys as "trackKeys",
       mix,
+      stage,
       position
     from songs
     where show_id = ${showId}
@@ -86,6 +88,7 @@ export async function listSongs(showId: string): Promise<Song[]> {
     sections: parseSections(row.sections),
     cues: parseCues(row.cues),
     mix: storedMix(row.mix),
+    stage: storedStage(row.stage),
     position: Number(row.position),
   }));
 }

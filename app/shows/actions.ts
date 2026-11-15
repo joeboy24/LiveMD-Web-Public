@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { getSql } from "../db";
 import { storedMix } from "./mix";
+import { storedStage, storedTempo } from "./stage";
 import { listSongs } from "./queries";
 import { publishableSongs, publishedShow, snapshotSongs } from "./publication";
 import { parseCues, parseSections } from "./structure";
 import { ownedAudioKey, signAudioRead, signAudioUpload } from "./storage";
-import type { FormState, PublishedShow, ShowSnapshot, Song, SongCue, SongMix, SongSection } from "./types";
+import type { FormState, PublishedShow, ShowSnapshot, Song, SongCue, SongMix, SongSection, SongStage } from "./types";
 
 export async function createShow(_state: FormState, formData: FormData): Promise<FormState> {
   const title = String(formData.get("title") ?? "").trim();
@@ -108,7 +109,7 @@ export async function restoreSong(showId: string, song: Song) {
   await sql`
     insert into songs (
       id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
-      stem_key, guide_key, track_keys, sections, cues, mix, position
+      stem_key, guide_key, track_keys, sections, cues, mix, stage, position
     )
     values (
       ${song.id},
@@ -126,6 +127,7 @@ export async function restoreSong(showId: string, song: Song) {
       ${JSON.stringify(song.sections ?? [])}::jsonb,
       ${JSON.stringify(song.cues ?? [])}::jsonb,
       ${JSON.stringify(storedMix(song.mix))}::jsonb,
+      ${JSON.stringify(storedStage(song.stage))}::jsonb,
       ${position}
     )
   `;
@@ -212,6 +214,22 @@ export async function saveArrangement(
   return { error: null as string | null };
 }
 
+export async function saveStage(showId: string, songId: string, tempo: number, stage: SongStage) {
+  const cleanTempo = storedTempo(tempo);
+  const clean = storedStage(stage);
+  const sql = getSql();
+  const rows = await sql`
+    update songs
+    set tempo = ${cleanTempo},
+        stage = ${JSON.stringify(clean)}::jsonb
+    where id = ${songId} and show_id = ${showId}
+    returning id
+  `;
+  if (!rows[0]) return { error: "That song is missing." };
+  revalidatePath("/", "layout");
+  return { error: null as string | null };
+}
+
 export async function saveMix(showId: string, songId: string, mix: SongMix) {
   const clean = storedMix(mix);
   const sql = getSql();
@@ -286,6 +304,7 @@ export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
       guide_key as "guideKey",
       track_keys as "trackKeys",
       mix,
+      stage,
       position,
       created_at::text as "createdAt"
     from songs
@@ -326,7 +345,7 @@ export async function restoreShow(show: ShowSnapshot) {
     await sql`
       insert into songs (
         id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
-        stem_key, guide_key, track_keys, sections, cues, mix, position, created_at
+        stem_key, guide_key, track_keys, sections, cues, mix, stage, position, created_at
       )
       values (
         ${song.id},
@@ -344,6 +363,7 @@ export async function restoreShow(show: ShowSnapshot) {
         ${JSON.stringify(song.sections ?? [])}::jsonb,
         ${JSON.stringify(song.cues ?? [])}::jsonb,
         ${JSON.stringify(storedMix(song.mix))}::jsonb,
+        ${JSON.stringify(storedStage(song.stage))}::jsonb,
         ${song.position},
         ${song.createdAt}::timestamptz
       )
@@ -374,6 +394,7 @@ function songFromRow(row: Record<string, unknown>): Song {
     sections: parseSections(row.sections),
     cues: parseCues(row.cues),
     mix: storedMix(row.mix),
+    stage: storedStage(row.stage),
     position: Number(row.position ?? 0),
   };
 }

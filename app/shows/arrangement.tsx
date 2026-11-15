@@ -2,13 +2,17 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { RowMenu } from "../components/row-menu";
-import { readAudio, saveArrangement, saveMix, saveStemLayers, signUpload } from "./actions";
+import { readAudio, saveArrangement, saveMix, saveStage, saveStemLayers, signUpload } from "./actions";
 import { busGain, layerGain, storedMix } from "./mix";
+import { SongSettings } from "./song-settings";
+import { createPitch, loadPitch, pitchLatencySamples } from "./pitch";
+import { stemRate, storedStage, storedTempo, withSourceTempo } from "./stage";
+import { playable, prepareStretch } from "./stretch";
 import { enqueueSave, flushSaves } from "./save-queue";
 import { THEME_EVENT } from "../theme";
 import { makeClickBuffer } from "./click-track";
 import { activeLyricIndex, barLabel, cueColor, cueSpeechPlace, encodeSectionLyrics, lyricBlocks, lyricSectionGroups, moreSectionNames, placedLyrics, sectionAtBar, sectionColor, sectionNames } from "./structure";
-import type { Song, SongCue, SongMix, SongSection } from "./types";
+import type { Song, SongCue, SongMix, SongSection, SongStage } from "./types";
 
 const fullBarWidth = 92;
 const rulerHeight = 28;
@@ -64,6 +68,9 @@ export function Arrangement({
   const [looping, setLooping] = useState(false);
   const [rehearsal, setRehearsal] = useState(false);
   const [mix, setMix] = useState<SongMix>(() => storedMix(song.mix));
+  const [tempo, setTempo] = useState(song.tempo);
+  const [stage, setStage] = useState<SongStage>(() => storedStage(song.stage));
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [layerList, setLayerList] = useState<StemLayer[]>(() => stemLayers(song));
   const [layersOpen, setLayersOpen] = useState(false);
   const [addingAudio, setAddingAudio] = useState<"track" | "guide" | null>(null);
@@ -85,6 +92,8 @@ export function Arrangement({
   const trackKeysRef = useRef(song.trackKeys);
   const guideKeyRef = useRef(song.guideKey);
   const songRef = useRef(song);
+  const tempoRef = useRef(tempo);
+  const stageRef = useRef(stage);
   const onDraftRef = useRef(onDraft);
   const editingRef = useRef(false);
   const draftRef = useRef<string[]>([]);
@@ -92,7 +101,9 @@ export function Arrangement({
   const productionMixRef = useRef<SongMix>(storedMix(song.mix));
   const rehearsalRef = useRef(false);
   const mixTimer = useRef<number | null>(null);
-  songRef.current = song;
+  tempoRef.current = tempo;
+  stageRef.current = stage;
+  songRef.current = { ...song, tempo, stage };
   onDraftRef.current = onDraft;
   draftRef.current = draftLines;
   editingRef.current = editingLyrics;
@@ -108,7 +119,8 @@ export function Arrangement({
   const clickKeyRef = useRef("");
   const audioRef = useRef<AudioContext | null>(null);
   const layersRef = useRef<LoadedLayer[]>([]);
-  const sourcesRef = useRef<Array<{ id: string; source: AudioBufferSourceNode }>>([]);
+  const sourcesRef = useRef<Array<{ id: string; source: AudioBufferSourceNode; pitch: AudioWorkletNode | null }>>([]);
+  const clickDelayRef = useRef<DelayNode | null>(null);
   const gainsRef = useRef<Map<string, GainNode>>(new Map());
   const removedRef = useRef(new Set<string>());
   const mixRef = useRef(mix);
@@ -188,7 +200,7 @@ export function Arrangement({
         }
         layersRef.current = readyLayers;
         bufferRef.current = main.buffer;
-        const barDuration = (Math.max(song.beatsPerBar, 1) * 60) / Math.max(song.tempo, 1);
+        const barDuration = (Math.max(song.beatsPerBar, 1) * 60) / Math.max(tempoRef.current, 1);
         const bars = Math.max(1, Math.round(main.buffer.duration / barDuration));
         setReady(true);
         setPeaks(peaksFrom(main.buffer, bars * 8));
@@ -224,7 +236,7 @@ export function Arrangement({
       alive = false;
       controller.abort();
     };
-  }, [showId, song.id, layerKey, song.beatsPerBar, song.tempo]);
+  }, [showId, song.id, layerKey, song.beatsPerBar]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -485,6 +497,28 @@ export function Arrangement({
     if (!rehearsalRef.current) persistMix();
   }
 
+  function commitPerformance(nextTempo: number, nextStage: SongStage) {
+    const previousTempo = tempoRef.current;
+    const previous = stageRef.current;
+    const cleanTempo = storedTempo(nextTempo);
+    const cleanStage = storedStage(withSourceTempo(previousTempo, cleanTempo, nextStage));
+    const timeChanged =
+      cleanTempo !== previousTempo || cleanStage.applyStem !== previous.applyStem || cleanStage.sourceTempo !== previous.sourceTempo;
+    tempoRef.current = cleanTempo;
+    stageRef.current = cleanStage;
+    setTempo(cleanTempo);
+    setStage(cleanStage);
+    songRef.current = { ...songRef.current, tempo: cleanTempo, stage: cleanStage };
+    onDraftRef.current(draftNow());
+    void enqueueSave(async () => {
+      const result = await saveStage(showId, song.id, cleanTempo, cleanStage);
+      reportError(result.error);
+    });
+    if (playingRef.current && timeChanged) startAt(playheadRef.current);
+    else for (const item of sourcesRef.current) item.pitch?.port.postMessage(cleanStage.pitch);
+    if (timeChanged) warmStems();
+  }
+
   function draftNow() {
     return currentDraft(
       songRef.current,
@@ -540,7 +574,7 @@ export function Arrangement({
   }
 
   function barSeconds() {
-    return (Math.max(song.beatsPerBar, 1) * 60) / Math.max(song.tempo, 1);
+    return (Math.max(song.beatsPerBar, 1) * 60) / Math.max(tempoRef.current, 1);
   }
 
   function spanAt(chart: number) {
@@ -621,6 +655,16 @@ export function Arrangement({
     }
   }
 
+  function release(item: { source: AudioBufferSourceNode; pitch: AudioWorkletNode | null }) {
+    item.source.onended = null;
+    try {
+      item.source.stop();
+    } catch {
+      // The source already finished.
+    }
+    item.pitch?.disconnect();
+  }
+
   function halt(forgetCues = false) {
     tokenRef.current += 1;
     armTokenRef.current += 1;
@@ -632,13 +676,7 @@ export function Arrangement({
     playRef.current = null;
     const sources = sourcesRef.current;
     sourcesRef.current = [];
-    for (const item of sources) {
-      try {
-        item.source.stop();
-      } catch {
-        // The source already finished.
-      }
-    }
+    for (const item of sources) release(item);
     silenceCues(forgetCues);
   }
 
@@ -685,52 +723,90 @@ export function Arrangement({
     void context.resume();
     tokenRef.current += 1;
     const token = tokenRef.current;
-    for (const item of sourcesRef.current) {
-      try {
-        item.source.stop();
-      } catch {
-        // The previous source already finished.
-      }
-    }
+    const previous = sourcesRef.current;
+    sourcesRef.current = [];
+    for (const item of previous) release(item);
     const beats = Math.max(song.beatsPerBar, 1);
-    const seconds = ((chart * beats - leadRef.current) * 60) / Math.max(song.tempo, 1);
-    const delay = Math.max(0, -seconds);
+    const playback = Math.max(tempoRef.current, 1);
+    const fileTempo = Math.max(stageRef.current.sourceTempo ?? playback, 1);
+    const rate = stemRate(playback, stageRef.current);
+    const beat = chart * beats - leadRef.current;
+    const delay = Math.max(0, (-beat * 60) / playback);
+    const seconds = Math.max(0, (beat * 60) / fileTempo);
     const ids = layers.map((layer) => layer.id);
-    const sources: Array<{ id: string; source: AudioBufferSourceNode }> = [];
-    for (const layer of layers) {
-      const offset = Math.min(Math.max(seconds, 0), Math.max(layer.buffer.duration - 0.02, 0));
-      if (layer.buffer.duration - offset <= 0.02) continue;
-      const source = context.createBufferSource();
-      source.buffer = layer.buffer;
-      source.connect(gainFor(layer.id, context, ids));
-      if (layer.main) {
-        source.onended = () => {
-          if (tokenRef.current !== token || !playingRef.current) return;
-          halt(true);
-          placeHead(Math.max(totalRef.current - 0.0001, 0), false);
-        };
+    const launch = (pitched: boolean) => {
+      if (token !== tokenRef.current) return;
+      const sources: Array<{ id: string; source: AudioBufferSourceNode; pitch: AudioWorkletNode | null }> = [];
+      for (const layer of layers) {
+        const fileOffset = Math.min(Math.max(seconds, 0), Math.max(layer.buffer.duration - 0.02, 0));
+        if (layer.buffer.duration - fileOffset <= 0.02) continue;
+        const played = playable(layer.buffer, rate, fileOffset);
+        if (played.buffer.duration - played.offset <= 0.02) continue;
+        const source = context.createBufferSource();
+        const pitch = pitched ? createPitch(context, stageRef.current.pitch) : null;
+        source.buffer = played.buffer;
+        if (pitch) {
+          source.connect(pitch);
+          pitch.connect(gainFor(layer.id, context, ids));
+        } else source.connect(gainFor(layer.id, context, ids));
+        if (layer.main) {
+          source.onended = () => {
+            if (tokenRef.current !== token || !playingRef.current) return;
+            halt(true);
+            placeHead(Math.max(totalRef.current - 0.0001, 0), false);
+          };
+        }
+        source.start(context.currentTime + delay, played.offset);
+        sources.push({ id: layer.id, source, pitch });
       }
-      source.start(context.currentTime + delay, offset);
-      sources.push({ id: layer.id, source });
-    }
-    const click = clickBuffer(context);
-    const clickOffset = Math.min(Math.max(chart * barSeconds(), 0), Math.max(click.duration - 0.02, 0));
-    if (click.duration - clickOffset > 0.02) {
-      const source = context.createBufferSource();
-      source.buffer = click;
-      source.connect(gainFor("click", context, ids));
-      source.start(context.currentTime, clickOffset);
-      sources.push({ id: "click", source });
-    }
-    sourcesRef.current = sources;
-    playRef.current = { contextTime: context.currentTime, chart };
-    playingRef.current = true;
-    setPlaying(true);
-    playheadRef.current = chart;
-    setPlayhead(chart);
-    setSelectedBar(Math.min(totalRef.current, Math.max(1, Math.floor(chart) + 1)));
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(follow);
+      const click = clickBuffer(context);
+      const clickOffset = Math.min(Math.max(chart * barSeconds(), 0), Math.max(click.duration - 0.02, 0));
+      if (click.duration - clickOffset > 0.02) {
+        const source = context.createBufferSource();
+        source.buffer = click;
+        const gain = gainFor("click", context, ids);
+        if (pitched) {
+          let clickDelay = clickDelayRef.current;
+          if (!clickDelay || clickDelay.context !== context) {
+            clickDelay = context.createDelay(0.2);
+            clickDelay.delayTime.value = pitchLatencySamples / context.sampleRate;
+            clickDelayRef.current = clickDelay;
+          }
+          clickDelay.disconnect();
+          clickDelay.connect(gain);
+          source.connect(clickDelay);
+        } else source.connect(gain);
+        source.start(context.currentTime, clickOffset);
+        sources.push({ id: "click", source, pitch: null });
+      }
+      sourcesRef.current = sources;
+      playRef.current = { contextTime: context.currentTime, chart };
+      playingRef.current = true;
+      setPlaying(true);
+      playheadRef.current = chart;
+      setPlayhead(chart);
+      setSelectedBar(Math.min(totalRef.current, Math.max(1, Math.floor(chart) + 1)));
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(follow);
+    };
+    void (async () => {
+      let pitched = false;
+      try {
+        await loadPitch(context);
+        pitched = true;
+      } catch {
+        pitched = false;
+      }
+      if (token !== tokenRef.current) return;
+      if (Math.abs(rate - 1) >= 0.001) await Promise.all(layers.map((layer) => prepareStretch(layer.buffer, rate)));
+      if (token !== tokenRef.current) return;
+      launch(pitched);
+    })();
+  }
+
+  function warmStems() {
+    const rate = stemRate(Math.max(tempoRef.current, 1), stageRef.current);
+    for (const layer of layersRef.current) void prepareStretch(layer.buffer, rate);
   }
 
   function gainFor(id: string, context: AudioContext, ids: string[]) {
@@ -748,7 +824,7 @@ export function Arrangement({
   function clickBuffer(context: AudioContext) {
     const bars = Math.max(totalRef.current, 1);
     const beats = Math.max(song.beatsPerBar, 1);
-    const tempo = Math.max(song.tempo, 1);
+    const tempo = Math.max(tempoRef.current, 1);
     const key = `${context.sampleRate}|${bars}|${beats}|${tempo}`;
     if (clickRef.current && clickKeyRef.current === key) return clickRef.current;
     const buffer = makeClickBuffer(context, bars, beats, tempo);
@@ -880,13 +956,7 @@ export function Arrangement({
     for (const id of ids) removedRef.current.delete(id);
     const dropped = sourcesRef.current.filter((item) => !ids.has(item.id));
     sourcesRef.current = sourcesRef.current.filter((item) => ids.has(item.id));
-    for (const item of dropped) {
-      try {
-        item.source.stop();
-      } catch {
-        // The source already finished.
-      }
-    }
+    for (const item of dropped) release(item);
     for (const id of [...gainsRef.current.keys()]) {
       if (ids.has(id)) continue;
       gainsRef.current.get(id)?.disconnect();
@@ -901,6 +971,7 @@ export function Arrangement({
     );
     const allowed = new Set(stemLayers({ stemKey: song.stemKey, trackKeys: trackKeysRef.current, guideKey: guideKeyRef.current }).map((layer) => layer.id));
     layersRef.current = [...layersRef.current.filter((item) => allowed.has(item.id)), ...loaded.filter((item) => allowed.has(item.id))];
+    warmStems();
     if (playingRef.current && loaded.length > 0) startAt(playheadRef.current);
   }
 
@@ -946,13 +1017,7 @@ export function Arrangement({
   useEffect(() => {
     return () => {
       cancelAnimationFrame(rafRef.current);
-      for (const item of sourcesRef.current) {
-        try {
-          item.source.stop();
-        } catch {
-          // The source already finished.
-        }
-      }
+      for (const item of sourcesRef.current) release(item);
       void audioRef.current?.close();
       window.speechSynthesis?.cancel();
     };
@@ -967,6 +1032,16 @@ export function Arrangement({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {settingsOpen ? (
+        <SongSettings
+          songKey={song.key}
+          tempo={tempo}
+          stage={stage}
+          onTempo={(next) => commitPerformance(next, stageRef.current)}
+          onStage={(next) => commitPerformance(tempoRef.current, next)}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
       <div className="grid shrink-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2">
         <button
           type="button"
@@ -1112,6 +1187,7 @@ export function Arrangement({
                   open={layersOpen}
                   railRef={railRef}
                   onToggle={() => setLayersOpen((open) => !open)}
+                  onSettings={() => setSettingsOpen(true)}
                   onChannel={(bus, channel) => changeMix({ ...mixRef.current, [bus]: channel })}
                 />
                 <div className="w-px shrink-0 bg-background" />
@@ -1662,14 +1738,14 @@ function Wave({
           openDraft(event.clientX, event.clientY);
         }}
       >
-        <div className="flex cursor-ew-resize" style={{ height: rulerHeight, touchAction: "none" }}>
+        <div className="flex cursor-ew-resize items-center" style={{ height: rulerHeight, touchAction: "none" }}>
           {Array.from({ length: totalBars }, (_, index) => {
             const bar = index + 1;
             const marked = bar === 1 || bar % step === 0;
             return (
               <span
                 key={bar}
-                className={`pl-1 text-[11px] ${bar === selectedBar ? "font-bold text-ink" : "font-medium text-muted"}`}
+                className={`pl-1 text-[11px] leading-none ${bar === selectedBar ? "font-bold text-ink" : "font-medium text-muted"}`}
                 style={{ width: barSize }}
               >
                 {marked ? bar : ""}
@@ -2391,6 +2467,7 @@ function TrackRail({
   open,
   railRef,
   onToggle,
+  onSettings,
   onChannel,
 }: {
   mix: SongMix;
@@ -2398,10 +2475,22 @@ function TrackRail({
   open: boolean;
   railRef: RefObject<HTMLDivElement | null>;
   onToggle: () => void;
+  onSettings: () => void;
   onChannel: (bus: "stems" | "click" | "cues", channel: MixChannel) => void;
 }) {
   return (
-    <div ref={railRef} className="flex w-[196px] shrink-0 flex-col rounded-l-[14px] bg-background/45" style={{ height: rulerHeight + laneHeight }}>
+    <div ref={railRef} className="relative flex w-[196px] shrink-0 flex-col rounded-l-[14px] bg-background/45" style={{ height: rulerHeight + laneHeight }}>
+      <button
+        type="button"
+        aria-label="Song settings"
+        onClick={onSettings}
+        className="absolute top-[2px] mt-0.5 right-2.5 flex h-[22px] items-center gap-1 rounded-md bg-surface-elevated pr-1.5 pl-0 text-[11px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover"
+      >
+        <span className="grid size-[22px] place-items-center">
+          <GearIcon />
+        </span>
+        setup
+      </button>
       <div style={{ height: rulerHeight }} />
       <div className="flex min-h-0 flex-1 flex-col">
         <TrackLane title="Stems" color="#076FBF" channel={mix.stems} onChange={(channel) => onChannel("stems", channel)}>
@@ -2411,7 +2500,7 @@ function TrackRail({
             aria-pressed={open}
             disabled={!canMix}
             onClick={onToggle}
-            className={`grid size-[26px] place-items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${canMix && open ? "bg-primary text-white" : "bg-surface-elevated text-muted"} disabled:text-disabled`}
+            className={`grid size-[22px] place-items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${canMix && open ? "bg-primary text-white" : "bg-surface-elevated text-muted"} disabled:text-disabled`}
           >
             <SlidersIcon />
           </button>
@@ -2457,7 +2546,7 @@ function RailToggle({ label, mark, on, color, onClick }: { label: string; mark: 
       aria-label={label}
       aria-pressed={on}
       onClick={onClick}
-      className={`grid size-[26px] place-items-center rounded-md text-[12px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${on ? "text-white" : "bg-surface-elevated text-muted"}`}
+      className={`grid size-[22px] place-items-center rounded-md text-[11px] font-bold outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${on ? "text-white" : "bg-surface-elevated text-muted"}`}
       style={on ? { backgroundColor: color } : undefined}
     >
       {mark}
@@ -2659,6 +2748,18 @@ function PlayIcon() {
   );
 }
 
+function GearIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        d="M6.55 1.15h2.9l.4 1.35c.42.16.8.38 1.15.66l1.25-.55 1.45 1.45-.55 1.25c.28.35.5.73.66 1.15l1.35.4v2.9l-1.35.4a4.4 4.4 0 0 1-.66 1.15l.55 1.25-1.45 1.45-1.25-.55a4.4 4.4 0 0 1-1.15.66l-.4 1.35H6.55l-.4-1.35a4.4 4.4 0 0 1-1.15-.66l-1.25.55-1.45-1.45.55-1.25a4.4 4.4 0 0 1-.66-1.15l-1.35-.4V6.86l1.35-.4c.16-.42.38-.8.66-1.15l-.55-1.25 1.45-1.45 1.25.55c.35-.28.73-.5 1.15-.66l.4-1.35ZM8 6.05a1.95 1.95 0 1 0 .01 3.9A1.95 1.95 0 0 0 8 6.05Z"
+      />
+    </svg>
+  );
+}
+
 function PauseIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
@@ -2677,7 +2778,7 @@ function StopIcon() {
 
 function SlidersIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
       <path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       <circle cx="4.5" cy="3.5" r="1.35" fill="currentColor" />
       <circle cx="9" cy="7" r="1.35" fill="currentColor" />

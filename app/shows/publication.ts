@@ -1,4 +1,5 @@
 import { storedMix } from "./mix";
+import { storedStage } from "./stage";
 import type { PublishedShow, PublishedSong, Song } from "./types";
 
 export function publishableSongs(songs: Song[]): PublishedSong[] {
@@ -28,6 +29,7 @@ export function publishableSongs(songs: Song[]): PublishedSong[] {
     guideKey: song.guideKey,
     trackKeys: [...song.trackKeys],
     mix: storedMix(song.mix),
+    stage: storedStage(song.stage),
     position: song.position,
   }));
 }

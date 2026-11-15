@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { readAudio } from "./actions";
 import { makeClickBuffer } from "./click-track";
 import { busGain, layerGain } from "./mix";
+import { createPitch, loadPitch, pitchLatencySamples } from "./pitch";
+import { stemRate } from "./stage";
+import { playable, prepareStretch } from "./stretch";
 import { cueSpeechPlace } from "./structure";
 import type { Song, SongCue } from "./types";
 
@@ -11,7 +14,7 @@ const cueBarSize = 92;
 
 type Mode = "set" | "song";
 type Layer = { id: string; key: string; main: boolean };
-type Live = { source: AudioBufferSourceNode; gain: GainNode };
+type Live = { source: AudioBufferSourceNode; gain: GainNode; pitch: AudioWorkletNode | null };
 type Spoken = { bar: number; place: number; text: string };
 type Clock = {
   songId: string;
@@ -67,6 +70,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       } catch {
         // The source already finished.
       }
+      item.pitch?.disconnect();
       item.gain.disconnect();
     }
   }, []);
@@ -177,29 +181,46 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       halt();
       return;
     }
-    const lead = (Math.max(song.leadBeats, 0) * 60) / Math.max(song.tempo, 1);
-    const duration = lead + main.buffer.duration;
+    const playback = Math.max(song.tempo, 1);
+    const rate = stemRate(playback, song.stage);
+    const lead = (Math.max(song.leadBeats, 0) * 60) / playback;
+    const duration = lead + main.buffer.duration / rate;
     const position = Math.min(Math.max(held, 0), duration);
     if (position >= duration - 0.05) {
       finish(token, song.id);
       return;
     }
     const ids = ready.map((layer) => layer.id);
-    const fileTime = position - lead;
-    const delay = Math.max(-fileTime, 0);
-    const offset = Math.max(fileTime, 0);
+    const into = Math.max(position - lead, 0);
+    const delay = Math.max(lead - position, 0);
+    const offset = into * rate;
+    let pitched = false;
+    try {
+      await loadPitch(context);
+      pitched = true;
+    } catch {
+      pitched = false;
+    }
+    await Promise.all(ready.map((layer) => prepareStretch(layer.buffer, rate)));
+    if (token !== tokenRef.current || !audioRef.current) return;
     const live: Live[] = [];
     for (const layer of ready) {
-      if (layer.buffer.duration - offset <= 0.02) continue;
+      const fileOffset = Math.min(offset, Math.max(layer.buffer.duration - 0.02, 0));
+      if (layer.buffer.duration - fileOffset <= 0.02) continue;
+      const played = playable(layer.buffer, rate, fileOffset);
+      if (played.buffer.duration - played.offset <= 0.02) continue;
       const source = context.createBufferSource();
       const gain = context.createGain();
-      source.buffer = layer.buffer;
+      const pitch = pitched ? createPitch(context, song.stage.pitch) : null;
+      source.buffer = played.buffer;
       gain.gain.value = layerGain(layer.id, song.mix, ids);
-      source.connect(gain);
+      if (pitch) source.connect(pitch);
+      else source.connect(gain);
+      pitch?.connect(gain);
       gain.connect(context.destination);
       if (layer.main) source.onended = () => finish(token, song.id);
-      source.start(context.currentTime + delay, Math.min(offset, Math.max(layer.buffer.duration - 0.02, 0)));
-      live.push({ source, gain });
+      source.start(context.currentTime + delay, played.offset);
+      live.push({ source, gain, pitch });
     }
     const beats = Math.max(song.beatsPerBar, 1);
     const tempo = Math.max(song.tempo, 1);
@@ -214,10 +235,15 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       const gain = context.createGain();
       source.buffer = click;
       gain.gain.value = busGain(song.mix.click, song.mix);
-      source.connect(gain);
+      if (pitched) {
+        const delayNode = context.createDelay(0.2);
+        delayNode.delayTime.value = pitchLatencySamples / context.sampleRate;
+        source.connect(delayNode);
+        delayNode.connect(gain);
+      } else source.connect(gain);
       gain.connect(context.destination);
       source.start(context.currentTime, clickOffset);
-      live.push({ source, gain });
+      live.push({ source, gain, pitch: null });
     }
     if (token !== tokenRef.current) {
       for (const item of live) {
@@ -227,6 +253,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
         } catch {
           // The source already finished.
         }
+        item.pitch?.disconnect();
         item.gain.disconnect();
       }
       return;
