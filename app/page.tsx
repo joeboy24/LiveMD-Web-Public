@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyLabel } from "./components/empty-label";
-import { listShows, listSongs } from "./shows/queries";
+import { listShows, listSongs, showPublication } from "./shows/queries";
 import { HistoryButtons } from "./shows/history";
 import { SongPanel } from "./shows/song-panel";
 
@@ -20,6 +20,7 @@ async function ShowsWorkspace({ searchParams }: { searchParams: Promise<{ show?:
   const shows = await listShows();
   const selected = shows.find((show) => show.id === requested) ?? null;
   const songs = selected ? await listSongs(selected.id) : [];
+  const publication = selected ? await showPublication(selected.id) : null;
 
   if (!selected) {
     return (
@@ -35,8 +36,8 @@ async function ShowsWorkspace({ searchParams }: { searchParams: Promise<{ show?:
       showId={selected.id}
       title={selected.title}
       dateLabel={selected.dateLabel}
-      ipadUpdate={selected.ipadUpdate}
       songs={songs}
+      publication={publication}
     />
   );
 }

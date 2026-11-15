@@ -1,11 +1,18 @@
 import { getSql } from "../db";
+import { storedMix } from "./mix";
+import { publishedShow, snapshotSongs } from "./publication";
 import { parseCues, parseSections } from "./structure";
-import type { Show, Song } from "./types";
+import type { PublishedShow, Show, Song } from "./types";
 
 export async function listShows(): Promise<Show[]> {
   const sql = getSql();
   const rows = await sql`
-    select shows.id, shows.title, shows.performed_on as "performedOn", count(songs.id)::int as "songCount"
+    select
+      shows.id,
+      shows.title,
+      shows.performed_on as "performedOn",
+      shows.published_at is not null as published,
+      count(songs.id)::int as "songCount"
     from shows
     left join songs on songs.show_id = shows.id
     group by shows.id
@@ -15,9 +22,30 @@ export async function listShows(): Promise<Show[]> {
     id: String(row.id),
     title: String(row.title),
     songCount: Number(row.songCount),
-    ipadUpdate: false,
+    published: row.published === true,
     ...showDate(row.performedOn),
   }));
+}
+
+export async function showPublication(showId: string): Promise<PublishedShow | null> {
+  const sql = getSql();
+  const rows = await sql`
+    select title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as snapshot
+    from shows
+    where id = ${showId}
+  `;
+  const row = rows[0];
+  const songs = row ? snapshotSongs(row.snapshot) : null;
+  if (!row?.publishedAt || !songs) return null;
+  return publishedShow(
+    {
+      id: showId,
+      title: String(row.title),
+      performedOn: String(row.performedOn).slice(0, 10),
+      publishedAt: String(row.publishedAt),
+    },
+    songs,
+  );
 }
 
 export async function listSongs(showId: string): Promise<Song[]> {
@@ -37,6 +65,7 @@ export async function listSongs(showId: string): Promise<Song[]> {
       stem_key as "stemKey",
       guide_key as "guideKey",
       track_keys as "trackKeys",
+      mix,
       position
     from songs
     where show_id = ${showId}
@@ -56,6 +85,7 @@ export async function listSongs(showId: string): Promise<Song[]> {
     trackKeys: trackKeysFrom(row.trackKeys),
     sections: parseSections(row.sections),
     cues: parseCues(row.cues),
+    mix: storedMix(row.mix),
     position: Number(row.position),
   }));
 }

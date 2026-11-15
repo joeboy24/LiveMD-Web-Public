@@ -1,32 +1,80 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RowMenu } from "../components/row-menu";
+import { publishShow } from "./actions";
 import { Arrangement } from "./arrangement";
 import { useSetlistHistory } from "./history";
+import { downloadPublished, publishableSongs, samePublication } from "./publication";
+import { flushSaves } from "./save-queue";
 import { SongList } from "./song-list";
 import { useSetlistPlayback } from "./setlist-playback";
-import type { Song } from "./types";
+import type { PublishedShow, Song } from "./types";
 
 export function SongPanel({
   showId,
   title,
   dateLabel,
-  ipadUpdate,
   songs,
+  publication,
 }: {
   showId: string;
   title: string;
   dateLabel: string;
-  ipadUpdate: boolean;
   songs: Song[];
+  publication: PublishedShow | null;
 }) {
   const history = useSetlistHistory();
   const router = useRouter();
   const params = useSearchParams();
-  const arranging = songs.find((song) => song.id === params.get("song")) ?? null;
-  const playback = useSetlistPlayback(showId, songs);
+  const edits = useRef(new Map<string, Song>());
+  const [library, setLibrary] = useState(songs);
+  const [activeShow, setActiveShow] = useState(showId);
+  const [published, setPublished] = useState(publication);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  if (activeShow !== showId) {
+    setActiveShow(showId);
+    edits.current = new Map();
+    setLibrary(songs);
+    setPublished(publication);
+  }
+  const arranging = library.find((song) => song.id === params.get("song")) ?? null;
+  const playback = useSetlistPlayback(showId, library);
+  const inSync = published !== null && samePublication(publishableSongs(library), published.songs);
+  const release = publishError ?? (published === null ? "Not published" : inSync ? "Published" : "Unpublished changes");
+
+  useEffect(() => {
+    setLibrary(songs.map((song) => edits.current.get(song.id) ?? song));
+  }, [songs]);
+
+  useEffect(() => {
+    setPublished((current) => {
+      if (!publication) return current && current.id === showId ? current : null;
+      if (current && current.id === showId && current.publishedAt > publication.publishedAt) return current;
+      return publication;
+    });
+  }, [publication, showId]);
+
+  function keepSong(next: Song) {
+    edits.current.set(next.id, next);
+    setLibrary((current) => current.map((song) => (song.id === next.id ? next : song)));
+  }
+
+  async function publish() {
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      await flushSaves();
+      const result = await publishShow(showId);
+      if (result.publication) setPublished(result.publication);
+      setPublishError(result.error);
+      router.refresh();
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   function showSong(songId: string | null) {
     const next = new URLSearchParams(params.toString());
@@ -47,9 +95,10 @@ export function SongPanel({
           key={arranging.id}
           showId={showId}
           song={arranging}
-          songs={songs}
+          songs={library}
           onClose={() => showSong(null)}
           onOpen={showSong}
+          onDraft={keepSong}
         />
       </section>
     );
@@ -61,10 +110,18 @@ export function SongPanel({
         <div className="min-w-0">
           <h2 className="truncate text-[22px] font-bold text-ink">{title}</h2>
           <p className="mt-0.5 truncate text-[13px] text-muted">
-            {dateLabel} · {songs.length} {songs.length === 1 ? "Song" : "Songs"}
+            {dateLabel} · {library.length} {library.length === 1 ? "Song" : "Songs"} · {release}
           </p>
         </div>
         <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            disabled={publishing || inSync}
+            onClick={() => void publish()}
+            className="mr-3 h-8 rounded-full bg-primary px-3 text-[13px] font-semibold text-white outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover disabled:bg-surface-elevated disabled:text-muted disabled:hover:bg-surface-elevated"
+          >
+            {publishing ? "Publishing" : inSync ? "Published" : "Publish"}
+          </button>
           <div className="mr-2 flex items-center gap-1">
             <button
               type="button"
@@ -94,13 +151,13 @@ export function SongPanel({
           <RowMenu
             label={`${title} actions`}
             items={[
-              { label: ipadUpdate ? "Redownload" : "Download", disabled: !ipadUpdate },
+              { label: "Download", disabled: published === null, onSelect: () => downloadPublished(showId) },
               { label: "Delete", onSelect: () => void history.removeShow(showId, true) },
             ]}
           />
         </div>
       </div>
-      <SongList showId={showId} songs={songs} onArrange={showSong} playback={playback} />
+      <SongList showId={showId} songs={library} onArrange={showSong} playback={playback} />
     </section>
   );
 }

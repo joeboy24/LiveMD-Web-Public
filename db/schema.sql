@@ -2,6 +2,8 @@ create table if not exists shows (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   performed_on date not null,
+  published_at timestamptz,
+  published_snapshot jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -20,6 +22,7 @@ create table if not exists songs (
   stem_key text,
   guide_key text,
   track_keys jsonb not null default '[]'::jsonb,
+  mix jsonb,
   position integer not null default 0,
   created_at timestamptz not null default now()
 );

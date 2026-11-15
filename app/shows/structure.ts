@@ -245,6 +245,26 @@ function customSectionColor(name: string) {
   return palette[hash];
 }
 
+export function cueSpeechPlace(text: string, anchor: number, barSize: number) {
+  const sample = text.trim() || "Cue";
+  const textWidth = measureCueText(sample);
+  const shown = barSize >= 88 || textWidth + 20 <= barSize * 1.2;
+  if (!shown) return anchor;
+  const halfBars = (textWidth + 20) / (2 * Math.max(barSize, 1));
+  return Math.max(anchor - halfBars, 0);
+}
+
+function measureCueText(text: string) {
+  if (typeof document === "undefined") return text.length * 7;
+  cueMeasure ??= document.createElement("canvas");
+  const context = cueMeasure.getContext("2d");
+  if (!context) return text.length * 7;
+  context.font = "600 13px system-ui, sans-serif";
+  return Math.ceil(context.measureText(text).width);
+}
+
+let cueMeasure: HTMLCanvasElement | null = null;
+
 function asArray(value: unknown) {
   if (Array.isArray(value)) return value;
   if (typeof value === "string") {

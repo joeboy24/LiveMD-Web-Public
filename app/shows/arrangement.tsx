@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { RowMenu } from "../components/row-menu";
-import { readAudio, saveArrangement, saveStemLayers, signUpload } from "./actions";
+import { readAudio, saveArrangement, saveMix, saveStemLayers, signUpload } from "./actions";
+import { busGain, layerGain, storedMix } from "./mix";
+import { enqueueSave, flushSaves } from "./save-queue";
 import { THEME_EVENT } from "../theme";
 import { makeClickBuffer } from "./click-track";
-import { activeLyricIndex, barLabel, cueColor, encodeSectionLyrics, lyricBlocks, lyricSectionGroups, moreSectionNames, placedLyrics, sectionAtBar, sectionColor, sectionNames } from "./structure";
-import type { Song, SongCue, SongSection } from "./types";
+import { activeLyricIndex, barLabel, cueColor, cueSpeechPlace, encodeSectionLyrics, lyricBlocks, lyricSectionGroups, moreSectionNames, placedLyrics, sectionAtBar, sectionColor, sectionNames } from "./structure";
+import type { Song, SongCue, SongMix, SongSection } from "./types";
 
 const fullBarWidth = 92;
 const rulerHeight = 28;
@@ -25,8 +27,7 @@ type Snap = {
   trackKeys: string[];
   guideKey: string | null;
 };
-type MixChannel = { level: number; muted: boolean; solo: boolean };
-type Mix = { stems: MixChannel; click: MixChannel; cues: MixChannel; layers: Record<string, MixChannel> };
+type MixChannel = SongMix["stems"];
 type StemLayer = { id: string; name: string; key: string; guide: boolean; main: boolean };
 type LoadedLayer = { id: string; buffer: AudioBuffer; main: boolean };
 
@@ -36,12 +37,14 @@ export function Arrangement({
   songs,
   onClose,
   onOpen,
+  onDraft,
 }: {
   showId: string;
   song: Song;
   songs: Song[];
   onClose: () => void;
   onOpen: (songId: string) => void;
+  onDraft: (song: Song) => void;
 }) {
   const [segment, setSegment] = useState<Segment>("tracks");
   const [sections, setSections] = useState<EditSection[]>(() => withIds(song.sections));
@@ -60,7 +63,7 @@ export function Arrangement({
   const [playing, setPlaying] = useState(false);
   const [looping, setLooping] = useState(false);
   const [rehearsal, setRehearsal] = useState(false);
-  const [mix, setMix] = useState<Mix>({ stems: freshChannel(), click: freshChannel(), cues: freshChannel(), layers: {} });
+  const [mix, setMix] = useState<SongMix>(() => storedMix(song.mix));
   const [layerList, setLayerList] = useState<StemLayer[]>(() => stemLayers(song));
   const [layersOpen, setLayersOpen] = useState(false);
   const [addingAudio, setAddingAudio] = useState<"track" | "guide" | null>(null);
@@ -81,6 +84,18 @@ export function Arrangement({
   const lyricsRef = useRef(lyrics);
   const trackKeysRef = useRef(song.trackKeys);
   const guideKeyRef = useRef(song.guideKey);
+  const songRef = useRef(song);
+  const onDraftRef = useRef(onDraft);
+  const editingRef = useRef(false);
+  const draftRef = useRef<string[]>([]);
+  const mountedRef = useRef(true);
+  const productionMixRef = useRef<SongMix>(storedMix(song.mix));
+  const rehearsalRef = useRef(false);
+  const mixTimer = useRef<number | null>(null);
+  songRef.current = song;
+  onDraftRef.current = onDraft;
+  draftRef.current = draftLines;
+  editingRef.current = editingLyrics;
   const playheadRef = useRef(0);
   const barSizeRef = useRef(fullBarWidth);
   const revealRef = useRef<(chart: number) => void>(() => {});
@@ -117,6 +132,7 @@ export function Arrangement({
   lyricsRef.current = lyrics;
   mixRef.current = mix;
 
+  const layerKey = `${song.stemKey ?? ""}\n${song.guideKey ?? ""}\n${song.trackKeys.join("|")}`;
   const totalBars = Math.max(sections.reduce((sum, section) => sum + section.bars, 0), 1);
   totalRef.current = totalBars;
   const canStart = splitAt(sections, Math.min(selectedBar, totalBars), sectionName.trim() || "Verse") !== null;
@@ -178,12 +194,26 @@ export function Arrangement({
         setPeaks(peaksFrom(main.buffer, bars * 8));
         if (showLoadBar) setProgress(null);
         setStatus(null);
-        if (!seeded.current && sectionsRef.current.length === 0) {
-          seeded.current = true;
-          const seededSections = [freshSection("Song", bars)];
-          setSections(seededSections);
-          void persist(showId, song.id, seededSections, cuesRef.current, leadRef.current, slipRef.current, lyricsRef.current, setError);
-        }
+          if (!seeded.current && sectionsRef.current.length === 0) {
+            seeded.current = true;
+            const seededSections = [freshSection("Song", bars)];
+            sectionsRef.current = seededSections;
+            setSections(seededSections);
+            onDraftRef.current(
+              currentDraft(
+                songRef.current,
+                seededSections,
+                cuesRef.current,
+                leadRef.current,
+                slipRef.current,
+                lyricsRef.current,
+                trackKeysRef.current.slice(),
+                guideKeyRef.current,
+                productionMixRef.current,
+              ),
+            );
+            void persist(showId, song.id, seededSections, cuesRef.current, leadRef.current, slipRef.current, lyricsRef.current, reportError);
+          }
       })
       .catch((reason: unknown) => {
         if (!alive || (reason instanceof DOMException && reason.name === "AbortError")) return;
@@ -194,7 +224,32 @@ export function Arrangement({
       alive = false;
       controller.abort();
     };
-  }, [showId, song.id, song.stemKey, song.guideKey, song.trackKeys, song.beatsPerBar, song.tempo]);
+  }, [showId, song.id, layerKey, song.beatsPerBar, song.tempo]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      flushMix();
+      if (!editingRef.current) return;
+      editingRef.current = false;
+      const nextLyrics = lyricsFromEditor(draftRef.current, stored(sectionsRef.current), lyricsRef.current);
+      onDraftRef.current(
+        currentDraft(
+          songRef.current,
+          sectionsRef.current,
+          cuesRef.current,
+          leadRef.current,
+          slipRef.current,
+          nextLyrics,
+          trackKeysRef.current.slice(),
+          guideKeyRef.current,
+          productionMixRef.current,
+        ),
+      );
+      void persist(showId, song.id, sectionsRef.current, cuesRef.current, leadRef.current, slipRef.current, nextLyrics, () => undefined);
+    };
+  }, [showId, song.id]);
 
   function snapshot(): Snap {
     return {
@@ -245,13 +300,15 @@ export function Arrangement({
     setLeadBeats(nextLead);
     setSlipBars(nextSlip);
     setLyrics(nextLyrics);
+    onDraftRef.current(currentDraft(songRef.current, nextSections, nextCues, nextLead, nextSlip, nextLyrics, nextTracks, nextGuide, productionMixRef.current));
     if (tracksChanged) {
-      void saveStemLayers(showId, song.id, nextTracks, nextGuide).then((result) => {
-        if (result.error) setError(result.error);
+      void enqueueSave(async () => {
+        const result = await saveStemLayers(showId, song.id, nextTracks, nextGuide);
+        reportError(result.error);
       });
       void adoptLayers(nextTracks, nextGuide);
     }
-    void persist(showId, song.id, nextSections, nextCues, nextLead, nextSlip, nextLyrics, setError);
+    void persist(showId, song.id, nextSections, nextCues, nextLead, nextSlip, nextLyrics, reportError);
   }
 
   function undo() {
@@ -389,25 +446,75 @@ export function Arrangement({
   }
 
   function finishLyrics() {
-    const previous = lyricBlocks(lyricsRef.current, stored(sectionsRef.current));
-    const blocks = stored(sectionsRef.current).map((section, index) => {
-      const texts = (draftLines[index] ?? "")
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const old = previous[index]?.lines ?? [];
-      const used = new Set<number>();
-      const lines = texts.map((text) => {
-        const match = old.findIndex((line, lineIndex) => !used.has(lineIndex) && line.text === text);
-        if (match < 0) return { text, place: null };
-        used.add(match);
-        return old[match];
-      });
-      return { name: section.name, lines };
-    });
-    const encoded = blocks.some((block) => block.lines.length) ? encodeSectionLyrics(blocks) : "";
+    const encoded = lyricsFromEditor(draftRef.current, stored(sectionsRef.current), lyricsRef.current);
+    editingRef.current = false;
     setEditingLyrics(false);
     apply(sectionsRef.current, cuesRef.current, true, leadRef.current, slipRef.current, encoded);
+  }
+
+  function reportError(message: string | null) {
+    if (mountedRef.current) setError(message);
+  }
+
+  function changeMix(next: SongMix) {
+    const clean = storedMix(next);
+    mixRef.current = clean;
+    setMix(clean);
+    if (rehearsalRef.current) return;
+    productionMixRef.current = clean;
+    onDraftRef.current(draftNow());
+    if (mixTimer.current) window.clearTimeout(mixTimer.current);
+    mixTimer.current = window.setTimeout(() => {
+      mixTimer.current = null;
+      persistMix();
+    }, 300);
+  }
+
+  function persistMix() {
+    const next = productionMixRef.current;
+    void enqueueSave(async () => {
+      const result = await saveMix(showId, song.id, next);
+      reportError(result.error);
+    });
+  }
+
+  function flushMix() {
+    if (mixTimer.current === null) return;
+    window.clearTimeout(mixTimer.current);
+    mixTimer.current = null;
+    if (!rehearsalRef.current) persistMix();
+  }
+
+  function draftNow() {
+    return currentDraft(
+      songRef.current,
+      sectionsRef.current,
+      cuesRef.current,
+      leadRef.current,
+      slipRef.current,
+      lyricsRef.current,
+      trackKeysRef.current.slice(),
+      guideKeyRef.current,
+      productionMixRef.current,
+    );
+  }
+
+  function toggleRehearsal() {
+    const next = !rehearsalRef.current;
+    if (next) flushMix();
+    rehearsalRef.current = next;
+    setRehearsal(next);
+    if (!next) {
+      const production = storedMix(productionMixRef.current);
+      mixRef.current = production;
+      setMix(production);
+    }
+  }
+
+  function leave() {
+    if (editingRef.current) finishLyrics();
+    flushMix();
+    void flushSaves().then(onClose);
   }
 
   function teachLyric(sectionIndex: number, lineIndex: number) {
@@ -864,7 +971,7 @@ export function Arrangement({
         <button
           type="button"
           aria-label="Setlist"
-          onClick={onClose}
+          onClick={leave}
           className="grid size-8 place-items-center rounded-lg text-ink outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
         >
           <Chevron />
@@ -967,7 +1074,7 @@ export function Arrangement({
           </button>
           <button
             type="button"
-            onClick={() => setRehearsal((on) => !on)}
+            onClick={toggleRehearsal}
             className={`h-8 rounded-[10px] px-2.5 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${rehearsal ? "bg-primary text-white" : "bg-surface text-ink"}`}
           >
             {rehearsal ? "Production Mode" : "Rehearsal Mode"}
@@ -1005,7 +1112,7 @@ export function Arrangement({
                   open={layersOpen}
                   railRef={railRef}
                   onToggle={() => setLayersOpen((open) => !open)}
-                  onChannel={(bus, channel) => setMix((current) => ({ ...current, [bus]: channel }))}
+                  onChannel={(bus, channel) => changeMix({ ...mixRef.current, [bus]: channel })}
                 />
                 <div className="w-px shrink-0 bg-background" />
                 <Wave
@@ -1036,7 +1143,7 @@ export function Arrangement({
                     panelRef={mixerRef}
                     layers={layerList}
                     mix={mix}
-                    onChannel={(id, channel) => setMix((current) => ({ ...current, layers: { ...current.layers, [id]: channel } }))}
+                    onChannel={(id, channel) => changeMix({ ...mixRef.current, layers: { ...mixRef.current.layers, [id]: channel } })}
                     onDelete={deleteLayer}
                   />
                 ) : null}
@@ -2045,7 +2152,7 @@ function previewEdge(sections: EditSection[], index: number, bar: number) {
   return next;
 }
 
-async function persist(
+function persist(
   showId: string,
   songId: string,
   sections: EditSection[],
@@ -2053,10 +2160,56 @@ async function persist(
   leadBeats: number,
   slipBars: number,
   lyrics: string,
-  setError: (message: string | null) => void,
+  onError: (message: string | null) => void,
 ) {
-  const result = await saveArrangement(showId, songId, stored(sections), cues, leadBeats, slipBars, lyrics);
-  setError(result.error);
+  return enqueueSave(async () => {
+    const result = await saveArrangement(showId, songId, stored(sections), cues, leadBeats, slipBars, lyrics);
+    onError(result.error);
+  });
+}
+
+function currentDraft(
+  song: Song,
+  sections: EditSection[],
+  cues = song.cues,
+  leadBeats = song.leadBeats,
+  slipBars = song.slipBars,
+  lyrics = song.lyrics,
+  trackKeys = song.trackKeys,
+  guideKey = song.guideKey,
+  mix = song.mix,
+): Song {
+  return {
+    ...song,
+    sections: stored(sections),
+    cues,
+    leadBeats,
+    slipBars,
+    lyrics,
+    trackKeys,
+    guideKey,
+    mix: storedMix(mix),
+  };
+}
+
+function lyricsFromEditor(draft: string[], sections: SongSection[], previousLyrics: string) {
+  const previous = lyricBlocks(previousLyrics, sections);
+  const blocks = sections.map((section, index) => {
+    const texts = (draft[index] ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const old = previous[index]?.lines ?? [];
+    const used = new Set<number>();
+    const lines = texts.map((text) => {
+      const match = old.findIndex((line, lineIndex) => !used.has(lineIndex) && line.text === text);
+      if (match < 0) return { text, place: null };
+      used.add(match);
+      return old[match];
+    });
+    return { name: section.name, lines };
+  });
+  return blocks.some((block) => block.lines.length) ? encodeSectionLyrics(blocks) : "";
 }
 
 function freshSection(name: string, bars: number): EditSection {
@@ -2232,41 +2385,6 @@ function stemLayers(song: { stemKey: string | null; trackKeys: string[]; guideKe
   return layers;
 }
 
-let cueMeasure: HTMLCanvasElement | null = null;
-
-function cueSpeechPlace(text: string, anchor: number, barSize: number) {
-  const sample = text.trim() || "Cue";
-  const textWidth = measureCueText(sample);
-  const shown = barSize >= 88 || textWidth + 20 <= barSize * 1.2;
-  if (!shown) return anchor;
-  const halfBars = (textWidth + 20) / (2 * Math.max(barSize, 1));
-  return Math.max(anchor - halfBars, 0);
-}
-
-function measureCueText(text: string) {
-  if (typeof document === "undefined") return text.length * 7;
-  cueMeasure ??= document.createElement("canvas");
-  const context = cueMeasure.getContext("2d");
-  if (!context) return text.length * 7;
-  context.font = "600 13px system-ui, sans-serif";
-  return Math.ceil(context.measureText(text).width);
-}
-
-function busGain(channel: MixChannel, mix: Mix) {
-  if (channel.muted) return 0;
-  if ((mix.stems.solo || mix.click.solo || mix.cues.solo) && !channel.solo) return 0;
-  return Math.min(Math.max(channel.level, 0), 1);
-}
-
-function layerGain(id: string, mix: Mix, ids: string[]) {
-  const bus = busGain(mix.stems, mix);
-  if (bus <= 0.001) return 0;
-  const channel = mix.layers[id] ?? freshChannel();
-  if (channel.muted) return 0;
-  if (ids.some((item) => mix.layers[item]?.solo) && !channel.solo) return 0;
-  return bus * Math.min(Math.max(channel.level, 0), 1);
-}
-
 function TrackRail({
   mix,
   canMix,
@@ -2275,7 +2393,7 @@ function TrackRail({
   onToggle,
   onChannel,
 }: {
-  mix: Mix;
+  mix: SongMix;
   canMix: boolean;
   open: boolean;
   railRef: RefObject<HTMLDivElement | null>;
@@ -2394,7 +2512,7 @@ function StemLayerList({
 }: {
   panelRef: RefObject<HTMLDivElement | null>;
   layers: StemLayer[];
-  mix: Mix;
+  mix: SongMix;
   onChannel: (id: string, channel: MixChannel) => void;
   onDelete: (layer: StemLayer) => Promise<void>;
 }) {

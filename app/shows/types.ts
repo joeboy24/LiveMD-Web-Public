@@ -6,7 +6,33 @@ export type Show = {
   day: string;
   dateLabel: string;
   dateKey: string;
-  ipadUpdate: boolean;
+  published: boolean;
+};
+
+export type PublishedSong = {
+  id: string;
+  title: string;
+  tempo: number;
+  beatsPerBar: number;
+  key: string | null;
+  leadBeats: number;
+  slipBars: number;
+  lyrics: string;
+  sections: SongSection[];
+  cues: SongCue[];
+  stemKey: string | null;
+  guideKey: string | null;
+  trackKeys: string[];
+  mix: SongMix;
+  position: number;
+};
+
+export type PublishedShow = {
+  id: string;
+  title: string;
+  performedOn: string;
+  publishedAt: string;
+  songs: PublishedSong[];
 };
 
 export type SongSection = {
@@ -24,6 +50,19 @@ export type SongCue = {
   y: number | null;
 };
 
+export type MixChannel = {
+  level: number;
+  muted: boolean;
+  solo: boolean;
+};
+
+export type SongMix = {
+  stems: MixChannel;
+  click: MixChannel;
+  cues: MixChannel;
+  layers: Record<string, MixChannel>;
+};
+
 export type Song = {
   id: string;
   title: string;
@@ -38,6 +77,7 @@ export type Song = {
   trackKeys: string[];
   sections: SongSection[];
   cues: SongCue[];
+  mix: SongMix;
   position: number;
 };
 
@@ -45,6 +85,8 @@ export type ShowSnapshot = {
   id: string;
   title: string;
   performedOn: string;
+  publishedAt: string | null;
+  publishedSongs: PublishedSong[] | null;
   songs: Array<Song & { createdAt: string }>;
 };
 

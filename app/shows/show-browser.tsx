@@ -13,6 +13,7 @@ import { RowMenu } from "../components/row-menu";
 import { SearchField } from "../components/search-field";
 import { createShow } from "./actions";
 import { useSetlistHistory } from "./history";
+import { downloadPublished } from "./publication";
 import { songCountLabel } from "./format";
 import type { FormState, Show } from "./types";
 
@@ -103,8 +104,9 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
                     label={`${show.title} actions`}
                     items={[
                       {
-                        label: show.ipadUpdate ? "Redownload" : "Download",
-                        disabled: !show.ipadUpdate,
+                        label: "Download",
+                        disabled: !show.published,
+                        onSelect: () => downloadPublished(show.id),
                       },
                       {
                         label: "Delete",

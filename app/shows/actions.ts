@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { getSql } from "../db";
+import { storedMix } from "./mix";
+import { listSongs } from "./queries";
+import { publishableSongs, publishedShow, snapshotSongs } from "./publication";
 import { parseCues, parseSections } from "./structure";
 import { ownedAudioKey, signAudioRead, signAudioUpload } from "./storage";
-import type { FormState, ShowSnapshot, Song, SongCue, SongSection } from "./types";
+import type { FormState, PublishedShow, ShowSnapshot, Song, SongCue, SongMix, SongSection } from "./types";
 
 export async function createShow(_state: FormState, formData: FormData): Promise<FormState> {
   const title = String(formData.get("title") ?? "").trim();
@@ -27,6 +30,8 @@ export async function createShow(_state: FormState, formData: FormData): Promise
       id: String(row.id),
       title: String(row.title),
       performedOn: String(row.performedOn).slice(0, 10),
+      publishedAt: null,
+      publishedSongs: null,
       songs: [],
     },
   };
@@ -103,7 +108,7 @@ export async function restoreSong(showId: string, song: Song) {
   await sql`
     insert into songs (
       id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
-      stem_key, guide_key, track_keys, sections, cues, position
+      stem_key, guide_key, track_keys, sections, cues, mix, position
     )
     values (
       ${song.id},
@@ -120,6 +125,7 @@ export async function restoreSong(showId: string, song: Song) {
       ${JSON.stringify(song.trackKeys ?? [])}::jsonb,
       ${JSON.stringify(song.sections ?? [])}::jsonb,
       ${JSON.stringify(song.cues ?? [])}::jsonb,
+      ${JSON.stringify(storedMix(song.mix))}::jsonb,
       ${position}
     )
   `;
@@ -206,10 +212,59 @@ export async function saveArrangement(
   return { error: null as string | null };
 }
 
-export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
+export async function saveMix(showId: string, songId: string, mix: SongMix) {
+  const clean = storedMix(mix);
+  const sql = getSql();
+  const rows = await sql`
+    update songs
+    set mix = ${JSON.stringify(clean)}::jsonb
+    where id = ${songId} and show_id = ${showId}
+    returning id
+  `;
+  if (!rows[0]) return { error: "That song is missing." };
+  revalidatePath("/", "layout");
+  return { error: null as string | null };
+}
+
+export async function publishShow(showId: string): Promise<{ error: string | null; publication?: PublishedShow }> {
   const sql = getSql();
   const shows = await sql`
     select id, title, performed_on::text as "performedOn"
+    from shows
+    where id = ${showId}
+  `;
+  const show = shows[0];
+  if (!show) return { error: "That show is missing." };
+  const songs = publishableSongs(await listSongs(showId));
+  const snapshot = { songs };
+  const rows = await sql`
+    update shows
+    set published_at = now(),
+        published_snapshot = ${JSON.stringify(snapshot)}::jsonb
+    where id = ${showId}
+    returning published_at::text as "publishedAt"
+  `;
+  const publishedAt = rows[0]?.publishedAt;
+  if (!publishedAt) return { error: "That show didn't publish." };
+  revalidatePath("/", "layout");
+  return {
+    error: null,
+    publication: publishedShow(
+      {
+        id: showId,
+        title: String(show.title),
+        performedOn: String(show.performedOn).slice(0, 10),
+        publishedAt: String(publishedAt),
+      },
+      songs,
+    ),
+  };
+}
+
+export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
+  const sql = getSql();
+  const shows = await sql`
+    select id, title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as "publishedSnapshot"
     from shows
     where id = ${showId}
   `;
@@ -230,6 +285,7 @@ export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
       stem_key as "stemKey",
       guide_key as "guideKey",
       track_keys as "trackKeys",
+      mix,
       position,
       created_at::text as "createdAt"
     from songs
@@ -247,21 +303,30 @@ export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
     id: String(show.id),
     title: String(show.title),
     performedOn: String(show.performedOn).slice(0, 10),
+    publishedAt: show.publishedAt == null ? null : String(show.publishedAt),
+    publishedSongs: snapshotSongs(show.publishedSnapshot),
     songs: songs.map((row) => ({ ...songFromRow(row), createdAt: String(row.createdAt) })),
   };
 }
 
 export async function restoreShow(show: ShowSnapshot) {
   const sql = getSql();
+  const snapshot = show.publishedSongs ? JSON.stringify({ songs: show.publishedSongs }) : null;
   await sql`
-    insert into shows (id, title, performed_on)
-    values (${show.id}, ${show.title}, ${show.performedOn}::date)
+    insert into shows (id, title, performed_on, published_at, published_snapshot)
+    values (
+      ${show.id},
+      ${show.title},
+      ${show.performedOn}::date,
+      ${show.publishedAt}::timestamptz,
+      ${snapshot}::jsonb
+    )
   `;
   for (const song of show.songs) {
     await sql`
       insert into songs (
         id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
-        stem_key, guide_key, track_keys, sections, cues, position, created_at
+        stem_key, guide_key, track_keys, sections, cues, mix, position, created_at
       )
       values (
         ${song.id},
@@ -278,6 +343,7 @@ export async function restoreShow(show: ShowSnapshot) {
         ${JSON.stringify(song.trackKeys ?? [])}::jsonb,
         ${JSON.stringify(song.sections ?? [])}::jsonb,
         ${JSON.stringify(song.cues ?? [])}::jsonb,
+        ${JSON.stringify(storedMix(song.mix))}::jsonb,
         ${song.position},
         ${song.createdAt}::timestamptz
       )
@@ -307,6 +373,7 @@ function songFromRow(row: Record<string, unknown>): Song {
     trackKeys: trackKeysFrom(row.trackKeys),
     sections: parseSections(row.sections),
     cues: parseCues(row.cues),
+    mix: storedMix(row.mix),
     position: Number(row.position ?? 0),
   };
 }
