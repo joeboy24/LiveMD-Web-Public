@@ -2,11 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
-import { deleteShow, deleteSong, restoreShow, restoreSong } from "./actions";
+import { deleteShow, deleteSong, orderSongs, restoreShow, restoreSong } from "./actions";
 import type { ShowSnapshot, Song } from "./types";
 
 type Change =
   | { kind: "add" | "remove"; showId: string; song: Song }
+  | { kind: "order"; showId: string; before: string[]; after: string[] }
   | { kind: "add-show" | "delete-show"; show: ShowSnapshot; reopen: boolean };
 
 type HistoryApi = {
@@ -15,6 +16,7 @@ type HistoryApi = {
   record: (change: Change) => void;
   removeShow: (showId: string, reopen: boolean) => Promise<void>;
   removeSong: (showId: string, song: Song) => Promise<void>;
+  moveSongs: (showId: string, before: string[], after: string[]) => Promise<string | null>;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
 };
@@ -59,6 +61,10 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
       const removing = change.kind === "remove" ? !reverse : reverse;
       if (removing) await deleteSong(change.song.id);
       else await restoreSong(change.showId, change.song);
+      return;
+    }
+    if (change.kind === "order") {
+      await orderSongs(change.showId, reverse ? change.before : change.after);
       return;
     }
     if (change.kind === "delete-show" || change.kind === "add-show") {
@@ -111,12 +117,21 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
     record({ kind: "remove", showId, song });
   }
 
+  async function moveSongs(showId: string, before: string[], after: string[]) {
+    if (before.join() === after.join()) return null;
+    const result = await orderSongs(showId, after);
+    if (result.error) return result.error;
+    record({ kind: "order", showId, before, after });
+    return null;
+  }
+
   const api: HistoryApi = {
     canUndo: tick >= 0 && undoRef.current.length > 0 && !busy,
     canRedo: tick >= 0 && redoRef.current.length > 0 && !busy,
     record,
     removeShow,
     removeSong,
+    moveSongs,
     undo,
     redo,
   };

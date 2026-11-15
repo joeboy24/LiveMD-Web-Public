@@ -36,10 +36,11 @@ export async function listSongs(showId: string): Promise<Song[]> {
       cues,
       stem_key as "stemKey",
       guide_key as "guideKey",
-      track_keys as "trackKeys"
+      track_keys as "trackKeys",
+      position
     from songs
     where show_id = ${showId}
-    order by created_at asc
+    order by position asc, created_at asc
   `;
   return rows.map((row) => ({
     id: String(row.id),
@@ -55,6 +56,7 @@ export async function listSongs(showId: string): Promise<Song[]> {
     trackKeys: trackKeysFrom(row.trackKeys),
     sections: parseSections(row.sections),
     cues: parseCues(row.cues),
+    position: Number(row.position),
   }));
 }
 

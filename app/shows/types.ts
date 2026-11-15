@@ -38,6 +38,7 @@ export type Song = {
   trackKeys: string[];
   sections: SongSection[];
   cues: SongCue[];
+  position: number;
 };
 
 export type ShowSnapshot = {

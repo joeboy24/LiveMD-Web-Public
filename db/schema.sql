@@ -20,5 +20,6 @@ create table if not exists songs (
   stem_key text,
   guide_key text,
   track_keys jsonb not null default '[]'::jsonb,
+  position integer not null default 0,
   created_at timestamptz not null default now()
 );

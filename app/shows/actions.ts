@@ -59,9 +59,15 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
   const trackKeys = trackKey ? [trackKey] : [];
 
   const sql = getSql();
+  const placed = await sql`
+    select coalesce(max(position), -1) + 1 as position
+    from songs
+    where show_id = ${showId}
+  `;
+  const position = Number(placed[0]?.position ?? 0);
   const rows = await sql`
     insert into songs (
-      show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics, stem_key, guide_key, track_keys
+      show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics, stem_key, guide_key, track_keys, position
     )
     values (
       ${showId},
@@ -74,11 +80,13 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
       ${lyrics},
       ${stemKey},
       ${guideKey},
-      ${JSON.stringify(trackKeys)}::jsonb
+      ${JSON.stringify(trackKeys)}::jsonb,
+      ${position}
     )
     returning
       id, title, tempo, beats_per_bar as "beatsPerBar", key, lead_beats as "leadBeats",
-      slip_bars as "slipBars", lyrics, stem_key as "stemKey", guide_key as "guideKey", track_keys as "trackKeys"
+      slip_bars as "slipBars", lyrics, stem_key as "stemKey", guide_key as "guideKey", track_keys as "trackKeys",
+      position
   `;
   revalidatePath("/", "layout");
   return { error: null, saved: true, song: songFromRow(rows[0]) };
@@ -86,10 +94,16 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
 
 export async function restoreSong(showId: string, song: Song) {
   const sql = getSql();
+  const position = Number.isInteger(song.position) ? song.position : 0;
+  await sql`
+    update songs
+    set position = position + 1
+    where show_id = ${showId} and position >= ${position}
+  `;
   await sql`
     insert into songs (
       id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
-      stem_key, guide_key, track_keys, sections, cues
+      stem_key, guide_key, track_keys, sections, cues, position
     )
     values (
       ${song.id},
@@ -105,10 +119,25 @@ export async function restoreSong(showId: string, song: Song) {
       ${song.guideKey},
       ${JSON.stringify(song.trackKeys ?? [])}::jsonb,
       ${JSON.stringify(song.sections ?? [])}::jsonb,
-      ${JSON.stringify(song.cues ?? [])}::jsonb
+      ${JSON.stringify(song.cues ?? [])}::jsonb,
+      ${position}
     )
   `;
   revalidatePath("/", "layout");
+}
+
+export async function orderSongs(showId: string, ids: string[]) {
+  const sql = getSql();
+  const rows = await sql`select id from songs where show_id = ${showId}`;
+  const owned = rows.map((row) => String(row.id));
+  if (ids.length !== owned.length || ids.some((id) => !owned.includes(id))) {
+    return { error: "That song order didn't save." };
+  }
+  for (let index = 0; index < ids.length; index += 1) {
+    await sql`update songs set position = ${index} where id = ${ids[index]} and show_id = ${showId}`;
+  }
+  revalidatePath("/", "layout");
+  return { error: null as string | null };
 }
 
 export async function signUpload(input: { showId: string; fileName: string; contentType: string; size: number }) {
@@ -201,10 +230,11 @@ export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
       stem_key as "stemKey",
       guide_key as "guideKey",
       track_keys as "trackKeys",
+      position,
       created_at::text as "createdAt"
     from songs
     where show_id = ${showId}
-    order by created_at asc
+    order by position asc, created_at asc
   `;
   await sql`
     with removed_songs as (
@@ -231,7 +261,7 @@ export async function restoreShow(show: ShowSnapshot) {
     await sql`
       insert into songs (
         id, show_id, title, tempo, beats_per_bar, key, lead_beats, slip_bars, lyrics,
-        stem_key, guide_key, track_keys, sections, cues, created_at
+        stem_key, guide_key, track_keys, sections, cues, position, created_at
       )
       values (
         ${song.id},
@@ -248,6 +278,7 @@ export async function restoreShow(show: ShowSnapshot) {
         ${JSON.stringify(song.trackKeys ?? [])}::jsonb,
         ${JSON.stringify(song.sections ?? [])}::jsonb,
         ${JSON.stringify(song.cues ?? [])}::jsonb,
+        ${song.position},
         ${song.createdAt}::timestamptz
       )
     `;
@@ -276,6 +307,7 @@ function songFromRow(row: Record<string, unknown>): Song {
     trackKeys: trackKeysFrom(row.trackKeys),
     sections: parseSections(row.sections),
     cues: parseCues(row.cues),
+    position: Number(row.position ?? 0),
   };
 }
 

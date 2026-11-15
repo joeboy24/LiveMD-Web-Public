@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
 import { RowMenu } from "../components/row-menu";
 import { Arrangement } from "./arrangement";
 import { useSetlistHistory } from "./history";
 import { SongList } from "./song-list";
+import { useSetlistPlayback } from "./setlist-playback";
 import type { Song } from "./types";
 
 export function SongPanel({
@@ -21,8 +23,22 @@ export function SongPanel({
   songs: Song[];
 }) {
   const history = useSetlistHistory();
-  const [arrangingId, setArrangingId] = useState<string | null>(null);
-  const arranging = songs.find((song) => song.id === arrangingId);
+  const router = useRouter();
+  const params = useSearchParams();
+  const arranging = songs.find((song) => song.id === params.get("song")) ?? null;
+  const playback = useSetlistPlayback(showId, songs);
+
+  function showSong(songId: string | null) {
+    const next = new URLSearchParams(params.toString());
+    next.set("show", showId);
+    if (songId) next.set("song", songId);
+    else next.delete("song");
+    router.replace(`/?${next.toString()}`, { scroll: false });
+  }
+
+  useEffect(() => {
+    if (arranging) playback.stop();
+  }, [arranging, playback.stop]);
 
   if (arranging) {
     return (
@@ -32,8 +48,8 @@ export function SongPanel({
           showId={showId}
           song={arranging}
           songs={songs}
-          onClose={() => setArrangingId(null)}
-          onOpen={setArrangingId}
+          onClose={() => showSong(null)}
+          onOpen={showSong}
         />
       </section>
     );
@@ -49,9 +65,26 @@ export function SongPanel({
           </p>
         </div>
         <div className="flex shrink-0 items-center">
-          <HeaderButton label="Play" disabled tone={songs.length > 0 ? "primary" : "quiet"}>
-            <PlayIcon />
-          </HeaderButton>
+          <div className="mr-2 flex items-center gap-1">
+            <button
+              type="button"
+              aria-label={playback.setPlaying ? "Pause" : "Play"}
+              disabled={!playback.canPlay}
+              onClick={playback.toggleSet}
+              className="grid size-8 place-items-center rounded-full bg-primary text-white shadow-[0_4px_12px_rgb(7_111_191/0.4)] outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover disabled:bg-surface-elevated disabled:text-disabled disabled:shadow-none disabled:hover:bg-surface-elevated"
+            >
+              {playback.setPlaying ? <PauseIcon /> : <PlayIcon />}
+            </button>
+            <button
+              type="button"
+              aria-label="Stop"
+              disabled={!playback.activeId}
+              onClick={playback.stop}
+              className="grid size-8 place-items-center rounded-full bg-surface-elevated text-ink outline-none hover:brightness-125 focus-visible:ring-2 focus-visible:ring-primary-hover disabled:text-disabled disabled:hover:brightness-100"
+            >
+              <StopIcon />
+            </button>
+          </div>
           <HeaderButton label="Undo" disabled={!history.canUndo} onClick={() => void history.undo()}>
             <UndoIcon />
           </HeaderButton>
@@ -67,7 +100,7 @@ export function SongPanel({
           />
         </div>
       </div>
-      <SongList showId={showId} songs={songs} onArrange={setArrangingId} />
+      <SongList showId={showId} songs={songs} onArrange={showSong} playback={playback} />
     </section>
   );
 }
@@ -85,7 +118,7 @@ function HeaderButton({
   onClick?: () => void;
   children: ReactNode;
 }) {
-  const color = disabled ? (tone === "primary" ? "text-primary" : "text-disabled") : "text-ink";
+  const color = disabled ? "text-disabled" : tone === "primary" ? "text-primary" : "text-ink";
   return (
     <button
       type="button"
@@ -101,8 +134,24 @@ function HeaderButton({
 
 function PlayIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-      <path fill="currentColor" d="M5 3.1v9.8l7.4-4.9L5 3.1Z" />
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" className="translate-x-px">
+      <path fill="currentColor" d="M5.4 3.2v9.6l7-4.8-7-4.8Z" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <path fill="currentColor" d="M4.2 3h2.4v10H4.2zm5.2 0h2.4v10H9.4z" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="4.2" y="4.2" width="7.6" height="7.6" rx="1.6" fill="currentColor" />
     </svg>
   );
 }
