@@ -17,8 +17,8 @@ export function ListRow({
   trailing?: ReactNode;
 }) {
   const shell = selected
-    ? "flex min-h-14 items-center gap-1 rounded-xl bg-surface px-2.5 py-2 shadow-[inset_3px_0_0_0_var(--primary)]"
-    : "flex min-h-14 items-center gap-1 rounded-xl bg-surface px-2.5 py-2 hover:bg-surface-elevated";
+    ? "flex min-h-14 min-w-0 items-center gap-1 overflow-hidden rounded-xl bg-surface px-2.5 py-2 shadow-[inset_3px_0_0_0_var(--primary)]"
+    : "flex min-h-14 min-w-0 items-center gap-1 overflow-hidden rounded-xl bg-surface px-2.5 py-2 hover:bg-surface-elevated";
   const body = (
     <>
       {leading}

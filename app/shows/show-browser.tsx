@@ -71,8 +71,8 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
   }
 
   return (
-    <section className="flex h-full flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
+    <section className="flex h-full min-w-0 flex-col overflow-x-hidden">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-[17px] font-bold text-ink">Shows</h1>
         <button
@@ -89,9 +89,9 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
       {visible.length === 0 ? (
         <EmptyLabel className="mt-3">{emptyCopy(shows.length, day, Boolean(trimmed))}</EmptyLabel>
       ) : (
-        <ul className="mt-3 grid gap-2">
+        <ul className="mt-3 grid min-w-0 gap-2">
           {visible.map((show) => (
-            <li key={show.id}>
+            <li key={show.id} className="min-w-0">
               <ListRow
                 href={`/?show=${show.id}`}
                 selected={show.id === selectedId}

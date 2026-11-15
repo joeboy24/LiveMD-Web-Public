@@ -90,6 +90,8 @@ export function cueColor(name: string) {
   return palette[hash];
 }
 
+export type LyricLine = { text: string; place: number | null };
+
 export function lyricBlocks(raw: string, sections: { name: string }[]) {
   const decoded = decodeSectionLyrics(raw);
   if (decoded && decoded.length > 0) {
@@ -98,31 +100,142 @@ export function lyricBlocks(raw: string, sections: { name: string }[]) {
       lines: decoded[index]?.lines ?? [],
     }));
   }
-  const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((text) => ({ text, place: null }));
   return sections.map((section, index) => ({ name: section.name, lines: index === 0 ? lines : [] }));
 }
 
-export function encodeSectionLyrics(blocks: { name: string; lines: string[] }[]) {
-  return blocks.map((block) => `\u001e${block.name}\u001f${block.lines.join("\n")}`).join("");
+export function encodeSectionLyrics(blocks: { name: string; lines: LyricLine[] }[]) {
+  return blocks
+    .map((block) => {
+      const body = block.lines.map((line) => (line.place == null ? line.text : `\u001d${line.place.toFixed(4)}\u001c${line.text}`)).join("\n");
+      return `\u001e${block.name}\u001f${body}`;
+    })
+    .join("");
+}
+
+export function lyricSectionGroups(blocks: { lines: LyricLine[] }[], sections: { name: string; bars: number }[]) {
+  const spans: { name: string; start: number; end: number }[] = [];
+  let cursor = 0;
+  sections.forEach((section) => {
+    const bars = Math.max(section.bars, 1);
+    spans.push({ name: section.name, start: cursor, end: cursor + bars });
+    cursor += bars;
+  });
+  const flat: { section: number; line: number; text: string; place: number | null }[] = [];
+  blocks.forEach((block, sectionIndex) => {
+    block.lines.forEach((line, lineIndex) => {
+      flat.push({ section: sectionIndex, line: lineIndex, text: line.text, place: line.place });
+    });
+  });
+  const places = resolvedPlaces(
+    flat.map((line) => ({ text: line.text, place: line.place })),
+    0,
+    Math.max(cursor, 1),
+  );
+  const groups = spans.map((span, index) => ({ name: span.name, index, lines: [] as { section: number; line: number; text: string }[] }));
+  flat.forEach((line, index) => {
+    const place = places[index] ?? 0;
+    let spanIndex = spans.findIndex((span) => place >= span.start && place < span.end);
+    if (spanIndex < 0) spanIndex = Math.max(spans.length - 1, 0);
+    groups[spanIndex]?.lines.push({ section: line.section, line: line.line, text: line.text });
+  });
+  return groups.filter((group) => group.lines.length > 0);
+}
+
+export function placedLyrics(blocks: { lines: LyricLine[] }[], sections: { bars: number }[]) {
+  let start = 0;
+  const placed: { section: number; line: number; text: string; place: number; taught: boolean }[] = [];
+  blocks.forEach((block, sectionIndex) => {
+    const bars = Math.max(sections[sectionIndex]?.bars ?? 1, 1);
+    const end = start + bars;
+    const places = resolvedPlaces(block.lines, start, end);
+    block.lines.forEach((line, lineIndex) => {
+      const place = line.place != null ? line.place : places[lineIndex];
+      if (place == null) return;
+      placed.push({ section: sectionIndex, line: lineIndex, text: line.text, place, taught: line.place != null });
+    });
+    start = end;
+  });
+  return placed;
+}
+
+export function activeLyricIndex(placed: { place: number; taught?: boolean }[], playhead: number) {
+  let best = -1;
+  let bestPlace = -Infinity;
+  placed.forEach((line, index) => {
+    if (line.taught === false) return;
+    if (line.place <= playhead + 0.02 && line.place >= bestPlace) {
+      best = index;
+      bestPlace = line.place;
+    }
+  });
+  return best;
+}
+
+function resolvedPlaces(lines: LyricLine[], start: number, end: number) {
+  const count = lines.length;
+  if (count === 0) return [];
+  const span = Math.max(end - start, 0.001);
+  const places = lines.map((_, index) => start + (index / count) * span);
+  const known: { index: number; place: number }[] = [{ index: -1, place: start }];
+  let last = start;
+  lines.forEach((line, index) => {
+    if (line.place == null) return;
+    const clamped = Math.min(Math.max(line.place, last), end);
+    known.push({ index, place: clamped });
+    last = clamped;
+  });
+  known.push({ index: count, place: Math.max(end, last) });
+  for (let pair = 0; pair < known.length - 1; pair += 1) {
+    const left = known[pair];
+    const right = known[pair + 1];
+    const gap = right.index - left.index;
+    if (gap <= 1) continue;
+    for (let step = 1; step < gap; step += 1) {
+      const index = left.index + step;
+      if (!lines[index] || lines[index].place != null) continue;
+      places[index] = left.place + ((right.place - left.place) * step) / gap;
+    }
+  }
+  lines.forEach((line, index) => {
+    if (line.place != null) places[index] = Math.min(Math.max(line.place, start), end);
+  });
+  for (let index = 1; index < count; index += 1) {
+    if (places[index] < places[index - 1]) places[index] = places[index - 1];
+  }
+  return places;
 }
 
 function decodeSectionLyrics(raw: string) {
   if (!raw.includes("\u001e")) return null;
-  return raw.split("\u001e").filter(Boolean).map((block) => {
-    const split = block.indexOf("\u001f");
-    const name = split < 0 ? block : block.slice(0, split);
-    const body = split < 0 ? "" : block.slice(split + 1);
-    const lines = body.split("\n").map(lyricText).filter(Boolean);
-    return { name, lines };
-  });
+  return raw
+    .split("\u001e")
+    .filter(Boolean)
+    .map((block) => {
+      const split = block.indexOf("\u001f");
+      const name = split < 0 ? block : block.slice(0, split);
+      const body = split < 0 ? "" : block.slice(split + 1);
+      const lines = body
+        .split("\n")
+        .map(parseLyricLine)
+        .filter((line) => line.text);
+      return { name, lines };
+    });
 }
 
-function lyricText(line: string) {
+function parseLyricLine(line: string): LyricLine {
   if (line.startsWith("\u001d")) {
     const split = line.indexOf("\u001c");
-    if (split >= 0) return line.slice(split + 1).trim();
+    if (split >= 0) {
+      const place = Number(line.slice(1, split));
+      return { text: line.slice(split + 1).trim(), place: Number.isFinite(place) ? place : null };
+    }
   }
-  return line.trim();
+  return { text: line.trim(), place: null };
 }
 
 function customSectionColor(name: string) {

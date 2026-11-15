@@ -5,7 +5,7 @@ import { RowMenu } from "../components/row-menu";
 import { readAudio, saveArrangement, saveStemLayers, signUpload } from "./actions";
 import { THEME_EVENT } from "../theme";
 import { makeClickBuffer } from "./click-track";
-import { barLabel, cueColor, encodeSectionLyrics, lyricBlocks, moreSectionNames, sectionAtBar, sectionColor, sectionNames } from "./structure";
+import { activeLyricIndex, barLabel, cueColor, encodeSectionLyrics, lyricBlocks, lyricSectionGroups, moreSectionNames, placedLyrics, sectionAtBar, sectionColor, sectionNames } from "./structure";
 import type { Song, SongCue, SongSection } from "./types";
 
 const fullBarWidth = 92;
@@ -14,6 +14,7 @@ const laneHeight = 132;
 const headerHeight = 24;
 
 type EditSection = SongSection & { id: string };
+type MarkerMenuState = { kind: "section" | "cue" | "lyric"; index: number } | null;
 type Segment = "tracks" | "sections" | "cues";
 type Snap = {
   sections: EditSection[];
@@ -51,6 +52,8 @@ export function Arrangement({
   const [editingLyrics, setEditingLyrics] = useState(false);
   const [draftLines, setDraftLines] = useState<string[]>([]);
   const [sectionName, setSectionName] = useState("Verse");
+  const [namesOpen, setNamesOpen] = useState(false);
+  const [stripOpen, setStripOpen] = useState(false);
   const [selectedBar, setSelectedBar] = useState(1);
   const [playhead, setPlayhead] = useState(0);
   const [waveScale, setWaveScale] = useState(1);
@@ -68,6 +71,7 @@ export function Arrangement({
   const [error, setError] = useState<string | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [markerMenu, setMarkerMenu] = useState<MarkerMenuState>(null);
   const undoRef = useRef<Snap[]>([]);
   const redoRef = useRef<Snap[]>([]);
   const sectionsRef = useRef(sections);
@@ -343,24 +347,89 @@ export function Arrangement({
     if (next) apply(next, cuesRef.current);
   }
 
+  function deleteSection(index: number) {
+    const current = sectionsRef.current;
+    if (current.length < 2 || !current[index]) return;
+    const removed = current[index];
+    const next = current.filter((_, itemIndex) => itemIndex !== index);
+    if (index > 0) {
+      const previous = next[index - 1];
+      const contiguous = (previous.sourceStartBar ?? 0) + (previous.sourceBars ?? previous.bars) === (removed.sourceStartBar ?? 0);
+      next[index - 1] = {
+        ...previous,
+        bars: previous.bars + removed.bars,
+        sourceBars: contiguous ? (previous.sourceBars ?? previous.bars) + (removed.sourceBars ?? removed.bars) : previous.sourceBars,
+      };
+    } else {
+      const following = next[0];
+      const contiguous = (removed.sourceStartBar ?? 0) + (removed.sourceBars ?? removed.bars) === (following.sourceStartBar ?? 0);
+      next[0] = {
+        ...following,
+        bars: following.bars + removed.bars,
+        sourceStartBar: contiguous ? (removed.sourceStartBar ?? 0) : following.sourceStartBar,
+        sourceBars: contiguous ? (removed.sourceBars ?? removed.bars) + (following.sourceBars ?? following.bars) : following.sourceBars,
+      };
+    }
+    apply(next, cuesRef.current);
+  }
+
+  function deleteCue(index: number) {
+    if (!cuesRef.current[index]) return;
+    apply(sectionsRef.current, cuesRef.current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
   function reset() {
     const bars = Math.max(totalBars - slipRef.current, 1);
     apply([freshSection("Song", bars)], cues, true, 0, 0, lyricsRef.current);
   }
 
   function beginLyrics() {
-    setDraftLines(lyricBlocks(lyricsRef.current, stored(sectionsRef.current)).map((block) => block.lines.join("\n")));
+    setDraftLines(lyricBlocks(lyricsRef.current, stored(sectionsRef.current)).map((block) => block.lines.map((line) => line.text).join("\n")));
     setEditingLyrics(true);
   }
 
   function finishLyrics() {
-    const blocks = stored(sectionsRef.current).map((section, index) => ({
-      name: section.name,
-      lines: (draftLines[index] ?? "").split("\n").map((line) => line.trim()).filter(Boolean),
-    }));
+    const previous = lyricBlocks(lyricsRef.current, stored(sectionsRef.current));
+    const blocks = stored(sectionsRef.current).map((section, index) => {
+      const texts = (draftLines[index] ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const old = previous[index]?.lines ?? [];
+      const used = new Set<number>();
+      const lines = texts.map((text) => {
+        const match = old.findIndex((line, lineIndex) => !used.has(lineIndex) && line.text === text);
+        if (match < 0) return { text, place: null };
+        used.add(match);
+        return old[match];
+      });
+      return { name: section.name, lines };
+    });
     const encoded = blocks.some((block) => block.lines.length) ? encodeSectionLyrics(blocks) : "";
     setEditingLyrics(false);
     apply(sectionsRef.current, cuesRef.current, true, leadRef.current, slipRef.current, encoded);
+  }
+
+  function teachLyric(sectionIndex: number, lineIndex: number) {
+    const blocks = lyricBlocks(lyricsRef.current, stored(sectionsRef.current));
+    const block = blocks[sectionIndex];
+    const line = block?.lines[lineIndex];
+    if (!line) return;
+    const place = playheadRef.current;
+    if (line.place != null && Math.abs(line.place - place) < 0.02) return;
+    const next = blocks.map((item, index) =>
+      index === sectionIndex
+        ? { ...item, lines: item.lines.map((entry, entryIndex) => (entryIndex === lineIndex ? { ...entry, place } : entry)) }
+        : item,
+    );
+    apply(sectionsRef.current, cuesRef.current, true, leadRef.current, slipRef.current, encodeSectionLyrics(next));
+  }
+
+  function clearLearnedLyrics() {
+    const blocks = lyricBlocks(lyricsRef.current, stored(sectionsRef.current));
+    if (!blocks.some((block) => block.lines.some((line) => line.place != null))) return;
+    const next = blocks.map((block) => ({ ...block, lines: block.lines.map((line) => ({ ...line, place: null })) }));
+    apply(sectionsRef.current, cuesRef.current, true, leadRef.current, slipRef.current, encodeSectionLyrics(next));
   }
 
   function barSeconds() {
@@ -613,6 +682,28 @@ export function Arrangement({
   }
 
   useEffect(() => {
+    if (!namesOpen) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-section-names]")) return;
+      setNamesOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [namesOpen]);
+
+  useEffect(() => {
+    if (!markerMenu) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-marker-menu], [data-section], [data-cue], [data-lyric-section]")) return;
+      setMarkerMenu(null);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [markerMenu]);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target;
@@ -639,10 +730,6 @@ export function Arrangement({
       loopRange.current = next ? spanAt(playheadRef.current) : null;
       return next;
     });
-  }
-
-  function chooseBar(bar: number) {
-    placeHead(bar - 1, true);
   }
 
   useEffect(() => {
@@ -848,7 +935,9 @@ export function Arrangement({
                 </option>
               ))}
             </select>
-            <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[11px] font-bold text-ink">⌄</span>
+            <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-muted">
+              <ChevronDown />
+            </span>
           </label>
           <button
             type="button"
@@ -936,7 +1025,11 @@ export function Arrangement({
                   onScrubEnd={endScrub}
                   onAddCue={addCueAt}
                   onMoveCue={moveCue}
+                  onDeleteCue={deleteCue}
                   onMoveEdge={moveEdge}
+                  onDeleteSection={deleteSection}
+                  markerMenu={markerMenu}
+                  onMarkerMenu={setMarkerMenu}
                 />
                 {layersOpen && layerList.length > 1 ? (
                   <StemLayerList
@@ -970,36 +1063,58 @@ export function Arrangement({
               </div>
               <div className="mt-3 shrink-0 rounded-xl bg-surface p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex h-8 overflow-hidden rounded-[10px] bg-background">
-                    <input
-                      aria-label="Section name"
-                      value={sectionName}
-                      onChange={(event) => setSectionName(event.target.value)}
-                      className="w-[136px] bg-transparent px-2.5 text-[13px] font-semibold text-ink outline-none"
-                    />
-                    <select
-                      aria-label="Section names"
-                      value=""
-                      onChange={(event) => {
-                        if (event.target.value) setSectionName(event.target.value);
-                      }}
-                      className="w-9 bg-transparent text-center text-[12px] font-bold text-muted outline-none"
-                    >
-                      <option value="">⌄</option>
-                      {sectionNames.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                      <option value="more" disabled>
-                        ────────
-                      </option>
-                      {moreSectionNames.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="relative" data-section-names="">
+                    <div className="flex h-7 overflow-hidden rounded-lg bg-background">
+                      <input
+                        aria-label="Section name"
+                        value={sectionName}
+                        onChange={(event) => setSectionName(event.target.value)}
+                        className="w-[120px] bg-transparent px-2 text-[12px] font-semibold text-ink outline-none"
+                      />
+                      <button
+                        type="button"
+                        aria-label="Section names"
+                        aria-expanded={namesOpen}
+                        aria-haspopup="menu"
+                        onClick={() => setNamesOpen((open) => !open)}
+                        className="grid w-7 shrink-0 place-items-center text-muted"
+                      >
+                        <ChevronDown />
+                      </button>
+                    </div>
+                    {namesOpen ? (
+                      <div role="menu" className="absolute top-8 left-0 z-30 max-h-72 w-40 overflow-y-auto rounded-xl bg-surface-elevated py-1 shadow-[0_12px_28px_rgb(0_0_0/0.4)]">
+                        {sectionNames.map((name) => (
+                          <button
+                            key={name}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setSectionName(name);
+                              setNamesOpen(false);
+                            }}
+                            className="block w-full px-3 py-1 text-left text-[13px] leading-4 font-medium text-ink hover:bg-background"
+                          >
+                            {name}
+                          </button>
+                        ))}
+                        <div className="mx-3 my-1 h-px bg-white/15" />
+                        {moreSectionNames.map((name) => (
+                          <button
+                            key={name}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setSectionName(name);
+                              setNamesOpen(false);
+                            }}
+                            className="block w-full px-3 py-1 text-left text-[13px] leading-4 font-medium text-ink hover:bg-background"
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <button
                     type="button"
@@ -1007,11 +1122,19 @@ export function Arrangement({
                     onClick={startSection}
                     className={
                       canStart
-                        ? "h-8 rounded-[10px] bg-primary px-2.5 text-[13px] font-semibold text-white"
-                        : "h-8 rounded-[10px] bg-background px-2.5 text-[13px] font-semibold text-disabled"
+                        ? "h-7 rounded-lg bg-primary px-2 text-[12px] font-semibold text-white"
+                        : "h-7 rounded-lg bg-background px-2 text-[12px] font-semibold text-disabled"
                     }
                   >
                     Start section here
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={stripOpen}
+                    onClick={() => setStripOpen((open) => !open)}
+                    className={`h-7 rounded-lg px-2 text-[12px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${stripOpen ? "bg-primary/50 text-ink" : "bg-background text-ink"}`}
+                  >
+                    View sections
                   </button>
                   <div className="ml-auto flex flex-wrap items-center gap-1.5">
                     <NudgeButton label="− Beat" onClick={() => nudge(-1)} />
@@ -1030,16 +1153,35 @@ export function Arrangement({
                 <LyricsPane
                   sections={sections}
                   lyrics={lyrics}
+                  playhead={playhead}
                   selectedBar={shownBar}
                   editing={editingLyrics}
                   draftLines={draftLines}
                   onDraft={setDraftLines}
                   onBegin={beginLyrics}
                   onFinish={finishLyrics}
-                  onSelect={chooseBar}
+                  onTeach={teachLyric}
+                  onClearLearned={clearLearnedLyrics}
+                  onDeleteSection={deleteSection}
+                  markerMenu={markerMenu}
+                  onMarkerMenu={setMarkerMenu}
                 />
               ) : null}
               {status ? <p className="mt-3 text-sm text-muted">{status}</p> : null}
+              {stripOpen ? (
+                <div className="sticky bottom-0 z-20 mt-auto flex shrink-0 gap-[0.5px] bg-background pt-3">
+                  {sections.map((section) => (
+                    <div
+                      key={section.id}
+                      className="flex h-[22px] min-w-fit items-center justify-center gap-1.5 overflow-hidden rounded-[2px] px-2 text-[12px] leading-none font-semibold whitespace-nowrap"
+                      style={{ flexGrow: section.bars, backgroundColor: sectionColor(section.name), color: chipInk(sectionColor(section.name)) }}
+                    >
+                      <span className="truncate">{section.name}</span>
+                      <span className="shrink-0 tabular-nums">{section.bars}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </>
           ) : (
             <p className="pt-6 text-[16px] text-muted">Choose Track 1 before marking sections on the audio.</p>
@@ -1149,6 +1291,27 @@ export function Arrangement({
   );
 }
 
+function MarkerMenu({ onDelete, className }: { onDelete: () => void; className: string }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      data-marker-menu=""
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        onDelete();
+      }}
+      className={`absolute z-30 flex items-center gap-1 rounded-lg bg-surface-elevated px-2 py-1 text-[12px] font-semibold whitespace-nowrap text-[#E4372D] shadow-[0_6px_16px_rgb(0_0_0/0.28)] ${className}`}
+    >
+      <span aria-hidden="true" className="text-[11px] leading-none font-bold">
+        ×
+      </span>
+      Delete
+    </button>
+  );
+}
+
 function Wave({
   sections,
   cues,
@@ -1166,7 +1329,11 @@ function Wave({
   onScrubEnd,
   onAddCue,
   onMoveCue,
+  onDeleteCue,
   onMoveEdge,
+  onDeleteSection,
+  markerMenu,
+  onMarkerMenu,
 }: {
   sections: EditSection[];
   cues: SongCue[];
@@ -1184,7 +1351,11 @@ function Wave({
   onScrubEnd: () => void;
   onAddCue: (place: number, y: number, text: string) => void;
   onMoveCue: (index: number, place: number, y: number) => void;
+  onDeleteCue: (index: number) => void;
   onMoveEdge: (index: number, bar: number) => void;
+  onDeleteSection: (index: number) => void;
+  markerMenu: MarkerMenuState;
+  onMarkerMenu: (menu: MarkerMenuState) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -1326,7 +1497,7 @@ function Wave({
 
   function beginScrub(event: ReactPointerEvent<HTMLDivElement>) {
     const target = event.target;
-    if (target instanceof Element && target.closest("[data-draft], [data-cue], [data-edge], [data-cue-strip]")) return;
+    if (target instanceof Element && target.closest("[data-draft], [data-cue], [data-edge], [data-section], [data-marker-menu], [data-cue-strip]")) return;
     if (draftRef.current) {
       commitDraft();
       ignoreClick.current = true;
@@ -1377,7 +1548,7 @@ function Wave({
         onPointerCancel={finishScrub}
         onDoubleClick={(event) => {
           const target = event.target;
-          if (target instanceof Element && target.closest("[data-edge], [data-draft], [data-cue-strip]")) return;
+          if (target instanceof Element && target.closest("[data-edge], [data-draft], [data-section], [data-marker-menu], [data-cue-strip]")) return;
           const bounds = event.currentTarget.getBoundingClientRect();
           if (event.clientY - bounds.top <= rulerHeight + 4) return;
           ignoreClick.current = true;
@@ -1400,20 +1571,34 @@ function Wave({
           })}
         </div>
         <div className="relative" style={{ height: laneHeight }}>
-          {shown.map((section) => {
+          {shown.map((section, index) => {
             const left = start * barSize;
             const band = section.bars * barSize;
             start += section.bars;
             const neutral = section.name.trim().toLowerCase() === "song";
             const color = sectionColor(section.name);
+            const open = markerMenu?.kind === "section" && markerMenu.index === index;
             return (
-              <div key={section.id} className="absolute top-0 h-full" style={{ left, width: band }}>
-                <div
-                  className={`flex h-6 items-center overflow-hidden px-2 text-[12px] font-semibold ${neutral ? "text-ink" : "text-white"}`}
+              <div key={section.id} className={`absolute top-0 h-full ${open ? "z-30" : ""}`} style={{ left, width: band }}>
+                <button
+                  type="button"
+                  data-section=""
+                  className={`relative z-10 flex h-6 w-full items-center overflow-hidden px-2 text-left text-[12px] font-semibold ${neutral ? "text-ink" : "text-white"}`}
                   style={{ backgroundColor: neutral ? "var(--surface-elevated)" : color }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => onMarkerMenu(markerMenu?.kind === "section" && markerMenu.index === index ? null : { kind: "section", index })}
                 >
                   {section.name}
-                </div>
+                </button>
+                {open && sections.length > 1 ? (
+                  <MarkerMenu
+                    className="top-6 left-2"
+                    onDelete={() => {
+                      onMarkerMenu(null);
+                      onDeleteSection(index);
+                    }}
+                  />
+                ) : null}
                 <div className="h-[calc(100%-24px)]" style={{ backgroundColor: color, opacity: neutral ? 0.08 : 0.16 }} />
               </div>
             );
@@ -1423,55 +1608,70 @@ function Wave({
             const lifted = cueLift?.index === index;
             const place = lifted ? cueLift.place : (cue.place ?? cue.bar - 1 + 0.35);
             const y = (lifted ? cueLift.y : (cue.y ?? 0.62)) * laneHeight;
+            const open = markerMenu?.kind === "cue" && markerMenu.index === index;
             return (
-              <button
-                key={`${cue.text}-${index}`}
-                type="button"
-                data-cue=""
-                aria-label={`Move ${cue.text}`}
-                className={`absolute z-[15] max-w-[240px] -translate-x-1/2 -translate-y-1/2 truncate rounded-full px-2.5 py-1 text-[13px] font-semibold text-[#1A242C] shadow-[0_1px_4px_rgb(0_0_0/0.28)] ${lifted ? "cursor-grabbing" : "cursor-grab"}`}
-                style={{ left: place * barSize, top: y, backgroundColor: cueColor(cue.text) }}
-                onPointerDown={(event) => {
-                  event.stopPropagation();
-                  event.preventDefault();
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  const originPlace = cue.place ?? cue.bar - 1 + 0.35;
-                  const originYPos = cue.y ?? 0.62;
-                  cueDrag.current = {
-                    index,
-                    originX: event.clientX,
-                    originY: event.clientY,
-                    originPlace,
-                    originYPos,
-                    place: originPlace,
-                    y: originYPos,
-                  };
-                  setCueLift({ index, place: originPlace, y: originYPos });
-                }}
-                onPointerMove={(event) => {
-                  const current = cueDrag.current;
-                  if (!current || current.index !== index) return;
-                  const place = Math.min(Math.max(current.originPlace + (event.clientX - current.originX) / barSize, 0), Math.max(totalBars - 0.0001, 0));
-                  const nextY = Math.min(Math.max(current.originYPos + (event.clientY - current.originY) / laneHeight, 0.06), 0.94);
-                  current.place = place;
-                  current.y = nextY;
-                  setCueLift({ index, place, y: nextY });
-                }}
-                onPointerUp={() => {
-                  const current = cueDrag.current;
-                  cueDrag.current = null;
-                  setCueLift(null);
-                  if (!current || current.index !== index) return;
-                  onMoveCue(index, current.place, current.y);
-                }}
-                onPointerCancel={() => {
-                  cueDrag.current = null;
-                  setCueLift(null);
-                }}
-                onDoubleClick={(event) => event.stopPropagation()}
-              >
-                {cue.text}
-              </button>
+              <div key={`${cue.text}-${index}`} data-cue="" className={`absolute z-[15] -translate-x-1/2 -translate-y-1/2 ${open ? "z-30" : ""}`} style={{ left: place * barSize, top: y }}>
+                <button
+                  type="button"
+                  aria-label={`Move ${cue.text}`}
+                  className={`max-w-[240px] truncate rounded-full px-2.5 py-1 text-[13px] font-semibold text-[#1A242C] shadow-[0_1px_4px_rgb(0_0_0/0.28)] ${lifted ? "cursor-grabbing" : "cursor-grab"}`}
+                  style={{ backgroundColor: cueColor(cue.text) }}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    const originPlace = cue.place ?? cue.bar - 1 + 0.35;
+                    const originYPos = cue.y ?? 0.62;
+                    cueDrag.current = {
+                      index,
+                      originX: event.clientX,
+                      originY: event.clientY,
+                      originPlace,
+                      originYPos,
+                      place: originPlace,
+                      y: originYPos,
+                    };
+                    setCueLift({ index, place: originPlace, y: originYPos });
+                  }}
+                  onPointerMove={(event) => {
+                    const current = cueDrag.current;
+                    if (!current || current.index !== index) return;
+                    const nextPlace = Math.min(Math.max(current.originPlace + (event.clientX - current.originX) / barSize, 0), Math.max(totalBars - 0.0001, 0));
+                    const nextY = Math.min(Math.max(current.originYPos + (event.clientY - current.originY) / laneHeight, 0.06), 0.94);
+                    current.place = nextPlace;
+                    current.y = nextY;
+                    setCueLift({ index, place: nextPlace, y: nextY });
+                  }}
+                  onPointerUp={(event) => {
+                    const current = cueDrag.current;
+                    cueDrag.current = null;
+                    setCueLift(null);
+                    if (!current || current.index !== index) return;
+                    const moved = Math.hypot(event.clientX - current.originX, event.clientY - current.originY) > 4;
+                    if (!moved) {
+                      onMarkerMenu(markerMenu?.kind === "cue" && markerMenu.index === index ? null : { kind: "cue", index });
+                      return;
+                    }
+                    onMoveCue(index, current.place, current.y);
+                  }}
+                  onPointerCancel={() => {
+                    cueDrag.current = null;
+                    setCueLift(null);
+                  }}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                >
+                  {cue.text}
+                </button>
+                {open ? (
+                  <MarkerMenu
+                    className={`left-1/2 -translate-x-1/2 ${y < 70 ? "top-7" : "bottom-7"}`}
+                    onDelete={() => {
+                      onMarkerMenu(null);
+                      onDeleteCue(index);
+                    }}
+                  />
+                ) : null}
+              </div>
             );
           })}
           {boundaries.map((edge) => (
@@ -1481,7 +1681,7 @@ function Wave({
               data-edge=""
               aria-label={`Move section edge at bar ${edge.bar + 1}`}
               className="absolute z-20 w-7 -translate-x-1/2 cursor-ew-resize"
-              style={{ left: edge.bar * barSize, top: 0, height: laneHeight }}
+              style={{ left: edge.bar * barSize, top: headerHeight, height: laneHeight - headerHeight }}
               onPointerDown={(event) => {
                 event.preventDefault();
                 event.currentTarget.setPointerCapture(event.pointerId);
@@ -1508,7 +1708,7 @@ function Wave({
                 if (current && current.bar !== current.originBar) onMoveEdge(current.index, current.bar);
               }}
             >
-              <span className="absolute left-1/2 top-1.5 h-[18px] w-2 -translate-x-1/2 rounded-full bg-ink shadow-[0_1px_2px_rgb(0_0_0/0.35)]" />
+              <span className="absolute left-1/2 h-3.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink shadow-[0_1px_2px_rgb(0_0_0/0.35)]" style={{ top: -12 }} />
             </button>
           ))}
           <button
@@ -1590,117 +1790,214 @@ function Wave({
 function LyricsPane({
   sections,
   lyrics,
+  playhead,
   selectedBar,
   editing,
   draftLines,
   onDraft,
   onBegin,
   onFinish,
-  onSelect,
+  onTeach,
+  onClearLearned,
+  onDeleteSection,
+  markerMenu,
+  onMarkerMenu,
 }: {
   sections: EditSection[];
   lyrics: string;
+  playhead: number;
   selectedBar: number;
   editing: boolean;
   draftLines: string[];
   onDraft: (lines: string[]) => void;
   onBegin: () => void;
   onFinish: () => void;
-  onSelect: (bar: number) => void;
+  onTeach: (sectionIndex: number, lineIndex: number) => void;
+  onClearLearned: () => void;
+  onDeleteSection: (index: number) => void;
+  markerMenu: MarkerMenuState;
+  onMarkerMenu: (menu: MarkerMenuState) => void;
 }) {
+  const scriptRef = useRef<HTMLDivElement>(null);
   const blocks = lyricBlocks(lyrics, stored(sections));
-  const current = sectionAtBar(stored(sections), selectedBar);
-  const currentLines = blocks.find((block) => block.name === current)?.lines ?? [];
+  const placed = placedLyrics(blocks, sections);
+  const taughtIndex = activeLyricIndex(placed, playhead);
+  const shownIndex = taughtIndex >= 0 ? taughtIndex : 0;
+  const current = placed[shownIndex];
+  const taught = taughtIndex >= 0 ? placed[taughtIndex] : null;
+  const sectionName = sectionAtBar(stored(sections), selectedBar);
   const hasLyrics = blocks.some((block) => block.lines.length > 0);
+  const marker = taught ? `${taught.section}-${taught.line}` : "";
+
+  useEffect(() => {
+    const scroller = scriptRef.current;
+    const line = scroller?.querySelector<HTMLElement>(`[data-lyric="${marker}"]`);
+    if (!scroller || !line || !marker) return;
+    const frame = scroller.getBoundingClientRect();
+    const row = line.getBoundingClientRect();
+    const padding = 8;
+    if (row.top >= frame.top + padding && row.bottom <= frame.bottom - padding) return;
+    const lineTop = row.top - frame.top + scroller.scrollTop;
+    const top = row.top < frame.top ? lineTop - padding : lineTop - (scroller.clientHeight - line.clientHeight - padding);
+    scroller.scrollTo({ top: Math.max(0, top) });
+  }, [marker]);
 
   return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface">
+    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-white/6 bg-surface">
       {editing ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-[15px] font-semibold text-ink">Lyrics</span>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center justify-between px-[18px] pt-3.5 pb-2">
+            <span className="text-[13px] font-semibold text-muted">Lyrics</span>
             <button type="button" onClick={onFinish} className="text-[14px] font-semibold text-primary">
               Done
             </button>
           </div>
-          <div className="grid gap-4 px-4 pb-4">
+          <div className="grid min-h-0 flex-1 content-start gap-[18px] overflow-y-auto px-[18px] pb-[18px]">
             {sections.map((section, index) => (
               <label key={section.id} className="grid gap-2">
-                <span className="text-[13px] font-semibold" style={{ color: sectionColor(section.name) }}>
+                <span className="text-[13px] font-semibold" style={{ color: sectionInk(section.name) }}>
                   {section.name}
                 </span>
                 <textarea
                   aria-label={`${section.name} lyrics`}
                   value={draftLines[index] ?? ""}
-                  rows={3}
+                  rows={4}
                   onChange={(event) => {
                     const next = draftLines.slice();
                     next[index] = event.target.value;
                     onDraft(next);
                   }}
-                  className="resize-none rounded-[10px] bg-background px-3 py-2 text-[15px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
+                  placeholder="Lyrics"
+                  className="h-[110px] resize-none rounded-[10px] border border-white/15 bg-background/45 px-3 py-2 text-[13px] leading-5 text-ink outline-none placeholder:text-disabled"
                 />
               </label>
             ))}
           </div>
         </div>
       ) : !hasLyrics ? (
-        <div className="grid min-h-0 flex-1 place-items-center gap-3 text-center">
+        <div className="grid min-h-0 flex-1 place-items-center content-center gap-3.5 text-center">
           <p className="text-[22px] font-semibold text-ink">No lyrics yet</p>
           <button type="button" onClick={onBegin} className="text-[15px] font-semibold text-primary">
             Add lyrics
           </button>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="flex items-center justify-between px-5 pt-4 pb-3">
-            <span className="text-[22px] font-semibold tracking-wide" style={{ color: sectionColor(current) }}>
-              {current}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center px-[22px] pt-[18px] pb-4">
+            <span className="text-[22px] font-semibold tracking-[0.8px]" style={{ color: sectionInk(sectionName) }}>
+              {sectionName}
             </span>
-            <button type="button" onClick={onBegin} className="text-[14px] font-semibold text-primary">
-              Edit
-            </button>
           </div>
-          <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <div className="grid content-start gap-3 px-5 pb-5">
-              {currentLines.length === 0 ? (
+          <div className="flex min-h-0 flex-1">
+            <div className="flex w-2/3 min-w-0 flex-col gap-3.5 overflow-hidden px-[22px] pb-[22px]">
+              {placed.length === 0 ? (
                 <p className="text-[20px] font-medium text-muted">No lyrics in this section</p>
               ) : (
-                currentLines.map((line, index) => (
-                  <p key={`${line}-${index}`} className={index === 0 ? "text-[28px] font-semibold text-ink" : "text-[20px] font-medium text-muted"}>
-                    {line}
-                  </p>
-                ))
+                [0, 1, 2].map((offset) => {
+                  const line = placed[shownIndex + offset];
+                  if (!line) return null;
+                  if (offset === 0) {
+                    return (
+                      <p key={offset} className="lyric-display text-[42px] leading-[48px] font-bold text-ink">
+                        {line.text}
+                      </p>
+                    );
+                  }
+                  if (offset === 1) return <p key={offset} className="text-[22px] font-medium text-muted">{line.text}</p>;
+                  return <p key={offset} className="text-[18px] font-normal text-disabled">{line.text}</p>;
+                })
               )}
             </div>
-            <div className="border-l border-background px-4 pb-4">
-              <p className="py-2 text-[12px] text-muted">Tap the line you're singing</p>
-              {blocks.map((block, index) => {
-                const start = sections.slice(0, index).reduce((sum, section) => sum + section.bars, 1);
-                return (
-                  <div key={`${block.name}-${index}`} className="mb-3">
-                    <p className="text-[13px] font-semibold" style={{ color: sectionColor(block.name) }}>
-                      {block.name}
-                    </p>
-                    {block.lines.map((line, lineIndex) => (
+            <div className="w-px shrink-0 bg-background" />
+            <div className="flex min-h-0 w-1/3 flex-col">
+              <div className="flex shrink-0 items-center justify-between gap-2 px-3.5 pt-3.5 pb-2">
+                <button
+                  type="button"
+                  onClick={onClearLearned}
+                  disabled={!blocks.some((block) => block.lines.some((line) => line.place != null))}
+                  className="text-[14px] font-semibold text-primary disabled:text-disabled"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={onBegin}
+                  className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-surface-elevated px-2.5 text-[13px] font-semibold text-ink"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9.4 3.1 12.9 6.6 5.7 13.8H2.2v-3.5L9.4 3.1Z" />
+                    <path d="M8.1 4.4 11.6 7.9" />
+                  </svg>
+                  Edit
+                </button>
+              </div>
+              <div ref={scriptRef} className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-3.5">
+              <p className="mb-4 text-[11px] font-medium text-disabled">Tap the line you're singing</p>
+              <div className="grid gap-4">
+                {lyricSectionGroups(blocks, stored(sections)).map((group) => (
+                  <div key={`${group.name}-${group.index}`} className="grid gap-1">
+                    <div className="relative">
                       <button
-                        key={`${index}-${lineIndex}`}
                         type="button"
-                        onClick={() => onSelect(start)}
-                        className={`mt-1 block w-full rounded-md px-2 py-1 text-left text-[14px] ${block.name === current && lineIndex === 0 ? "bg-primary text-white" : "text-ink"}`}
+                        data-lyric-section=""
+                        className="text-left text-[12px] font-semibold"
+                        style={{ color: sectionInk(group.name) }}
+                        onClick={() => onMarkerMenu(markerMenu?.kind === "lyric" && markerMenu.index === group.index ? null : { kind: "lyric", index: group.index })}
                       >
-                        {line}
+                        {group.name}
                       </button>
-                    ))}
+                      {markerMenu?.kind === "lyric" && markerMenu.index === group.index && sections.length > 1 ? (
+                        <MarkerMenu
+                          className="top-4 left-0"
+                          onDelete={() => {
+                            onMarkerMenu(null);
+                            onDeleteSection(group.index);
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                    {group.lines.map((line) => {
+                      const source = blocks[line.section]?.lines[line.line];
+                      const active = taught?.section === line.section && taught.line === line.line;
+                      const tone = active ? "font-semibold text-ink" : source?.place == null ? "font-normal text-disabled" : "font-normal text-muted";
+                      return (
+                        <button
+                          key={`${line.section}-${line.line}`}
+                          type="button"
+                          data-lyric={`${line.section}-${line.line}`}
+                          onClick={() => onTeach(line.section, line.line)}
+                          className={`block w-full rounded-md px-2 py-1.5 text-left text-[14px] ${tone}`}
+                          style={active ? { backgroundColor: "color-mix(in srgb, var(--primary) 22%, var(--surface))" } : undefined}
+                        >
+                          {line.text}
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                ))}
+              </div>
+              </div>
             </div>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+function sectionInk(name: string) {
+  return name.trim().toLowerCase() === "song" ? "var(--muted)" : sectionColor(name);
+}
+
+function chipInk(color: string) {
+  if (color.startsWith("var(")) return "var(--ink)";
+  const hex = color.replace("#", "");
+  if (hex.length !== 6) return "#1A242C";
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+  const luma = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+  return luma > 0.55 ? "#1A242C" : "#F4F7F8";
 }
 
 function NudgeButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -2224,6 +2521,14 @@ function RedoIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M9.8 6.2 12.6 9 9.8 11.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M12.4 9H7.3a3.2 3.2 0 1 1 0-6.4H8.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ChevronDown() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="pointer-events-none h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6.5 8 10.5 12 6.5" />
     </svg>
   );
 }

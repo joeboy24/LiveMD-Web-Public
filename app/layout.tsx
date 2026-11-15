@@ -19,6 +19,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <body className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background font-sans text-ink antialiased">
+        <style>{`
+          @font-face {
+            font-family: "Live Rounded";
+            src: url("/fonts/rounded") format("truetype");
+            font-weight: 100 900;
+            font-display: swap;
+          }
+          .lyric-display {
+            font-family: "Live Rounded", ui-rounded, "Arial Rounded MT Bold", sans-serif;
+          }
+        `}</style>
         <Script id="livemd-theme" strategy="beforeInteractive">
           {themeScript}
         </Script>
@@ -27,7 +38,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </Suspense>
         <SetlistHistory>
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[300px_minmax(0,3fr)_minmax(180px,1fr)_3.25rem] md:overflow-hidden">
-          <aside className="flex min-h-0 flex-col px-4 pt-4 md:h-full md:overflow-hidden md:border-r md:border-surface-elevated md:px-3 md:py-4">
+          <aside className="flex min-h-0 w-full min-w-0 flex-col overflow-x-hidden px-4 pt-4 md:h-full md:overflow-hidden md:border-r md:border-surface-elevated md:px-3 md:py-4">
             <Suspense fallback={<p className="text-base text-muted">Loading shows.</p>}>
               <ShowSidebar />
             </Suspense>
