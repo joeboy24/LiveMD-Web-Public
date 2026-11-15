@@ -2,18 +2,25 @@
 
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
-import { deleteShow, deleteSong, orderSongs, restoreShow, restoreSong } from "./actions";
+import { deleteShow, deleteSong, orderSongs, replaceShowDetails, replaceSongDetails, restoreShow, restoreSong } from "./actions";
 import type { ShowSnapshot, Song } from "./types";
 
 type Change =
   | { kind: "add" | "remove"; showId: string; song: Song }
+  | { kind: "edit"; showId: string; before: Song; after: Song }
   | { kind: "order"; showId: string; before: string[]; after: string[] }
+  | { kind: "edit-show"; before: ShowDetails; after: ShowDetails }
   | { kind: "add-show" | "delete-show"; show: ShowSnapshot; reopen: boolean };
+
+type ShowDetails = { id: string; title: string; performedOn: string };
+
+type Listener = (song: Song) => void;
 
 type HistoryApi = {
   canUndo: boolean;
   canRedo: boolean;
   record: (change: Change) => void;
+  subscribe: (listener: Listener) => () => void;
   removeShow: (showId: string, reopen: boolean) => Promise<void>;
   removeSong: (showId: string, song: Song) => Promise<void>;
   moveSongs: (showId: string, before: string[], after: string[]) => Promise<string | null>;
@@ -27,6 +34,7 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
   const router = useRouter();
   const undoRef = useRef<Change[]>([]);
   const redoRef = useRef<Change[]>([]);
+  const listeners = useRef(new Set<Listener>());
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState(false);
 
@@ -38,6 +46,16 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
     undoRef.current.push(change);
     redoRef.current = [];
     bump();
+  }
+
+  function subscribe(listener: Listener) {
+    listeners.current.add(listener);
+    return () => listeners.current.delete(listener);
+  }
+
+  function notify(song?: Song | null) {
+    if (!song) return;
+    for (const listener of listeners.current) listener(song);
   }
 
   function viewing(showId: string) {
@@ -57,6 +75,14 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
 
   async function apply(change: Change, direction: "undo" | "redo") {
     const reverse = direction === "undo";
+    if (change.kind === "edit") {
+      return replaceSongDetails(change.showId, reverse ? change.before : change.after);
+    }
+    if (change.kind === "edit-show") {
+      const next = reverse ? change.before : change.after;
+      await replaceShowDetails(next);
+      return;
+    }
     if (change.kind === "remove" || change.kind === "add") {
       const removing = change.kind === "remove" ? !reverse : reverse;
       if (removing) await deleteSong(change.song.id);
@@ -80,7 +106,7 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
     if (!change || busy) return;
     setBusy(true);
     try {
-      await apply(change, "undo");
+      notify(await apply(change, "undo"));
       redoRef.current.push(change);
     } catch {
       undoRef.current.push(change);
@@ -95,7 +121,7 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
     if (!change || busy) return;
     setBusy(true);
     try {
-      await apply(change, "redo");
+      notify(await apply(change, "redo"));
       undoRef.current.push(change);
     } catch {
       redoRef.current.push(change);
@@ -129,6 +155,7 @@ export function SetlistHistory({ children }: { children: ReactNode }) {
     canUndo: tick >= 0 && undoRef.current.length > 0 && !busy,
     canRedo: tick >= 0 && redoRef.current.length > 0 && !busy,
     record,
+    subscribe,
     removeShow,
     removeSong,
     moveSongs,

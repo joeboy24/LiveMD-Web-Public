@@ -4,6 +4,7 @@ import { useActionState, useRef, useState } from "react";
 import { Field, TextArea } from "../components/field";
 import { ImportRow } from "../components/import-row";
 import { signUpload } from "./actions";
+import { storedTempo } from "./stage";
 import { suggestTempo } from "./tempo";
 import type { FormState, Song } from "./types";
 
@@ -14,15 +15,19 @@ export function SongForm({
   showId,
   action,
   onSaved,
+  song,
 }: {
   showId: string;
   action: (state: FormState, formData: FormData) => Promise<FormState>;
   onSaved?: (song: Song) => void;
+  song?: Song;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [title, setTitle] = useState("");
-  const [tempo, setTempo] = useState(120);
-  const [key, setKey] = useState("");
+  const plainLyrics = readableLyrics(song?.lyrics ?? "");
+  const [title, setTitle] = useState(song?.title ?? "");
+  const [tempo, setTempo] = useState(song ? storedTempo(song.tempo) : 120);
+  const [key, setKey] = useState(song?.key ?? "");
+  const [lyrics, setLyrics] = useState(plainLyrics);
   const [trackOne, setTrackOne] = useState<File | null>(null);
   const [trackTwo, setTrackTwo] = useState<File | null>(null);
   const [guide, setGuide] = useState<File | null>(null);
@@ -50,6 +55,7 @@ export function SongForm({
         }
       }
     }
+    if (song && lyrics === plainLyrics) formData.set("lyrics", song.lyrics);
     try {
       if (trackOne) formData.set("stemKey", await uploadAudio(showId, trackOne));
       if (trackTwo) formData.set("trackKey", await uploadAudio(showId, trackTwo));
@@ -63,6 +69,7 @@ export function SongForm({
       setTitle("");
       setTempo(120);
       setKey("");
+      setLyrics("");
       setTrackOne(null);
       setTrackTwo(null);
       setGuide(null);
@@ -81,6 +88,7 @@ export function SongForm({
 
   return (
     <form ref={formRef} action={formAction}>
+      {song ? <input type="hidden" name="songId" value={song.id} /> : null}
       <Field
         className="mt-4"
         label="Title"
@@ -96,15 +104,15 @@ export function SongForm({
         <ImportRow
           label="Track 1"
           empty="Choose track"
-          fileName={trackOne?.name ?? ""}
+          fileName={trackOne?.name || fileLabel(song?.stemKey)}
           onFile={(file) => {
             setTrackOne(file);
             setSuggested(null);
             ignored.current = null;
           }}
         />
-        <ImportRow label="Track 2" empty="Choose track" fileName={trackTwo?.name ?? ""} onFile={setTrackTwo} />
-        <ImportRow label="Guide/Cues" empty="Add a guide" fileName={guide?.name ?? ""} onFile={setGuide} />
+        <ImportRow label="Track 2" empty="Choose track" fileName={trackTwo?.name || fileLabel(song?.trackKeys[0])} onFile={setTrackTwo} />
+        <ImportRow label="Guide/Cues" empty="Add a guide" fileName={guide?.name || fileLabel(song?.guideKey)} onFile={setGuide} />
       </div>
       <div className="mt-4 flex items-center gap-3">
         <span className="text-[16px] font-semibold text-ink">Tempo</span>
@@ -128,6 +136,7 @@ export function SongForm({
           className="h-9 w-14 appearance-none rounded-[10px] bg-surface text-center text-[15px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
         >
           <option value="">Key</option>
+          {key && !keys.includes(key) ? <option value={key}>{key}</option> : null}
           {keys.map((name) => (
             <option key={name} value={name}>
               {name}
@@ -164,7 +173,16 @@ export function SongForm({
           </button>
         </div>
       ) : null}
-      <TextArea className="mt-4" label="Lyrics" name="lyrics" tone="surface" rows={4} placeholder="Paste lyrics here" />
+      <TextArea
+        className="mt-4"
+        label="Lyrics"
+        name="lyrics"
+        tone="surface"
+        rows={4}
+        placeholder="Paste lyrics here"
+        value={lyrics}
+        onChange={(event) => setLyrics(event.target.value)}
+      />
       {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
       <button
         type="submit"
@@ -175,7 +193,7 @@ export function SongForm({
             : "mt-4 h-[52px] w-full rounded-xl bg-surface text-[17px] font-semibold text-disabled outline-none"
         }
       >
-        {pending ? (checking ? "Checking tempo…" : uploading ? "Uploading…" : "Saving…") : "Add to setlist"}
+        {pending ? (checking ? "Checking tempo…" : uploading ? "Uploading…" : "Saving…") : song ? "Save" : "Add to setlist"}
       </button>
     </form>
   );
@@ -196,6 +214,36 @@ async function uploadAudio(showId: string, file: File) {
   });
   if (!response.ok) throw new Error("The audio didn't upload.");
   return signed.key;
+}
+
+function fileLabel(key: string | null | undefined) {
+  if (!key) return "";
+  const name = key.split("/").pop() ?? "";
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
+function readableLyrics(raw: string) {
+  if (!raw.includes("\u001e")) return raw;
+  return raw
+    .split("\u001e")
+    .slice(1)
+    .map((block) => {
+      const body = block.split("\u001f")[1] ?? "";
+      return body
+        .split("\n")
+        .map((line) => {
+          const cut = line.indexOf("\u001c");
+          return (cut >= 0 ? line.slice(cut + 1) : line).trim();
+        })
+        .filter(Boolean)
+        .join("\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function fileKey(file: File) {

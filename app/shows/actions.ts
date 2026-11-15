@@ -38,6 +38,33 @@ export async function createShow(_state: FormState, formData: FormData): Promise
   };
 }
 
+export async function updateShow(showId: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const title = String(formData.get("title") ?? "").trim();
+  const performedOn = String(formData.get("performedOn") ?? "").trim();
+  if (!title) return { error: "Enter a show name." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(performedOn)) return { error: "Choose a performance date." };
+  const updated = await writeShow(showId, title, performedOn);
+  if (!updated) return { error: "That show is missing." };
+  return { error: null, saved: true };
+}
+
+export async function replaceShowDetails(show: { id: string; title: string; performedOn: string }) {
+  return writeShow(show.id, show.title, show.performedOn);
+}
+
+async function writeShow(showId: string, title: string, performedOn: string) {
+  const sql = getSql();
+  const rows = await sql`
+    update shows
+    set title = ${title}, performed_on = ${performedOn}::date
+    where id = ${showId}
+    returning id
+  `;
+  if (!rows[0]) return null;
+  revalidatePath("/", "layout");
+  return { id: showId, title, performedOn };
+}
+
 export async function createSong(showId: string, _state: FormState, formData: FormData): Promise<FormState> {
   const title = String(formData.get("title") ?? "").trim();
   const key = String(formData.get("key") ?? "").trim();
@@ -96,6 +123,106 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
   `;
   revalidatePath("/", "layout");
   return { error: null, saved: true, song: songFromRow(rows[0]) };
+}
+
+export async function updateSong(showId: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const songId = String(formData.get("songId") ?? "").trim();
+  const title = String(formData.get("title") ?? "").trim();
+  const key = String(formData.get("key") ?? "").trim();
+  const lyrics = String(formData.get("lyrics") ?? "");
+  const tempo = numberValue(formData.get("tempo"));
+  if (!songId) return { error: "That song is missing." };
+  if (!title) return { error: "A song needs a title." };
+  if (tempo == null || tempo <= 0) return { error: "Tempo has to be greater than zero." };
+
+  const sql = getSql();
+  const current = await sql`
+    select stem_key as "stemKey", guide_key as "guideKey", track_keys as "trackKeys"
+    from songs
+    where id = ${songId} and show_id = ${showId}
+  `;
+  if (!current[0]) return { error: "That song is missing." };
+  const stem = audioChoice(showId, formData.get("stemKey"), current[0].stemKey);
+  const guide = audioChoice(showId, formData.get("guideKey"), current[0].guideKey);
+  const tracks = trackChoice(showId, formData.get("trackKey"), current[0].trackKeys);
+  if (stem === undefined || guide === undefined || tracks === undefined) {
+    return { error: "That audio file didn't upload." };
+  }
+  const song = await writeSongDetails(showId, songId, {
+    title,
+    tempo,
+    key: key || null,
+    lyrics,
+    stemKey: stem,
+    guideKey: guide,
+    trackKeys: tracks,
+  });
+  if (!song) return { error: "That song is missing." };
+  return { error: null, saved: true, song };
+}
+
+export async function replaceSongDetails(
+  showId: string,
+  song: Pick<Song, "id" | "title" | "tempo" | "key" | "lyrics" | "stemKey" | "guideKey" | "trackKeys">,
+) {
+  return writeSongDetails(showId, song.id, {
+    title: song.title,
+    tempo: song.tempo,
+    key: song.key,
+    lyrics: song.lyrics,
+    stemKey: song.stemKey,
+    guideKey: song.guideKey,
+    trackKeys: song.trackKeys,
+  });
+}
+
+async function writeSongDetails(
+  showId: string,
+  songId: string,
+  details: {
+    title: string;
+    tempo: number;
+    key: string | null;
+    lyrics: string;
+    stemKey: string | null;
+    guideKey: string | null;
+    trackKeys: string[];
+  },
+) {
+  const sql = getSql();
+  const rows = await sql`
+    update songs
+    set title = ${details.title},
+        tempo = ${details.tempo},
+        key = ${details.key},
+        lyrics = ${details.lyrics},
+        stem_key = ${details.stemKey},
+        guide_key = ${details.guideKey},
+        track_keys = ${JSON.stringify(details.trackKeys)}::jsonb
+    where id = ${songId} and show_id = ${showId}
+    returning
+      id, title, tempo, beats_per_bar as "beatsPerBar", key, lead_beats as "leadBeats",
+      slip_bars as "slipBars", lyrics, stem_key as "stemKey", guide_key as "guideKey", track_keys as "trackKeys",
+      sections, cues, mix, stage, position
+  `;
+  if (!rows[0]) return null;
+  revalidatePath("/", "layout");
+  return songFromRow(rows[0]);
+}
+
+function audioChoice(showId: string, uploaded: FormDataEntryValue | null, current: unknown) {
+  const next = String(uploaded ?? "").trim();
+  if (!next) return current == null || current === "" ? null : String(current);
+  return ownedAudioKey(showId, next);
+}
+
+function trackChoice(showId: string, uploaded: FormDataEntryValue | null, current: unknown) {
+  const tracks = trackKeysFrom(current);
+  const next = String(uploaded ?? "").trim();
+  if (!next) return tracks;
+  const owned = ownedAudioKey(showId, next);
+  if (!owned) return undefined;
+  return tracks.length === 0 ? [owned] : [owned, ...tracks.slice(1)];
 }
 
 export async function restoreSong(showId: string, song: Song) {

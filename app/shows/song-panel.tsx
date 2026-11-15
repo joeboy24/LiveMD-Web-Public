@@ -88,6 +88,8 @@ export function SongPanel({
     if (arranging) playback.stop();
   }, [arranging, playback.stop]);
 
+  useEffect(() => history.subscribe(keepSong), [history, keepSong]);
+
   if (arranging) {
     return (
       <section className="flex min-h-0 flex-1 flex-col">
@@ -157,7 +159,7 @@ export function SongPanel({
           />
         </div>
       </div>
-      <SongList showId={showId} songs={library} onArrange={showSong} playback={playback} />
+      <SongList showId={showId} songs={library} onArrange={showSong} onEdited={keepSong} playback={playback} />
     </section>
   );
 }

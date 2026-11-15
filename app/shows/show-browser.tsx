@@ -11,7 +11,7 @@ import { PrimaryButton } from "../components/primary-button";
 import { MonthCalendar } from "../components/month-calendar";
 import { RowMenu } from "../components/row-menu";
 import { SearchField } from "../components/search-field";
-import { createShow } from "./actions";
+import { createShow, updateShow } from "./actions";
 import { useSetlistHistory } from "./history";
 import { downloadPublished } from "./publication";
 import { songCountLabel } from "./format";
@@ -47,6 +47,7 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
   const selectedId = useSearchParams().get("show");
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Show | null>(null);
   const [day, setDay] = useState<string | null>(null);
 
   function onSearch(next: string) {
@@ -103,6 +104,7 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
                   <RowMenu
                     label={`${show.title} actions`}
                     items={[
+                      { label: "Edit", onSelect: () => setEditing(show) },
                       {
                         label: "Download",
                         disabled: !show.published,
@@ -133,7 +135,8 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
           setQuery("");
         }}
       />
-      {adding ? <AddSetlistDialog onClose={() => setAdding(false)} /> : null}
+      {adding ? <SetlistDialog onClose={() => setAdding(false)} /> : null}
+      {editing ? <SetlistDialog key={editing.id} show={editing} onClose={() => setEditing(null)} /> : null}
     </section>
   );
 }
@@ -145,13 +148,27 @@ function todayKey() {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
-function AddSetlistDialog({ onClose }: { onClose: () => void }) {
+function SetlistDialog({ show, onClose }: { show?: Show; onClose: () => void }) {
   const router = useRouter();
   const history = useSetlistHistory();
-  const [name, setName] = useState("");
-  const [performedOn, setPerformedOn] = useState(todayKey);
+  const [name, setName] = useState(show?.title ?? "");
+  const [performedOn, setPerformedOn] = useState(show?.dateKey ?? todayKey());
   const [state, formAction, pending] = useActionState(async (previous: FormState, formData: FormData) => {
-    const result = await createShow(previous, formData);
+    const title = String(formData.get("title") ?? "").trim();
+    const date = String(formData.get("performedOn") ?? "").trim();
+    if (show && title === show.title && date === show.dateKey) {
+      onClose();
+      return { error: null };
+    }
+    const result = show ? await updateShow(show.id, previous, formData) : await createShow(previous, formData);
+    if (show && result.saved) {
+      history.record({
+        kind: "edit-show",
+        before: { id: show.id, title: show.title, performedOn: show.dateKey },
+        after: { id: show.id, title, performedOn: date },
+      });
+      onClose();
+    }
     if (result.show) {
       history.record({ kind: "add-show", show: result.show, reopen: true });
       onClose();
@@ -162,7 +179,7 @@ function AddSetlistDialog({ onClose }: { onClose: () => void }) {
   const ready = name.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(performedOn);
 
   return (
-    <Modal title="Add Setlist" onClose={onClose}>
+    <Modal title={show ? "Edit Show" : "Add Setlist"} onClose={onClose}>
       <form action={formAction}>
         <Field
           className="mt-4"
@@ -184,7 +201,7 @@ function AddSetlistDialog({ onClose }: { onClose: () => void }) {
         />
         {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
         <PrimaryButton type="submit" disabled={pending || !ready} className="mt-4 w-full">
-          {pending ? "Saving…" : "Add Setlist"}
+          {pending ? "Saving…" : show ? "Save" : "Add Setlist"}
         </PrimaryButton>
       </form>
     </Modal>

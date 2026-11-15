@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../components/modal";
 import { RowMenu } from "../components/row-menu";
-import { createSong } from "./actions";
+import { createSong, updateSong } from "./actions";
 import { useSetlistHistory } from "./history";
 import { songLine } from "./format";
 import { SongForm } from "./song-form";
@@ -16,15 +16,18 @@ export function SongList({
   showId,
   songs,
   onArrange,
+  onEdited,
   playback,
 }: {
   showId: string;
   songs: Song[];
   onArrange: (songId: string) => void;
+  onEdited?: (song: Song) => void;
   playback: Playback;
 }) {
   const history = useSetlistHistory();
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Song | null>(null);
   const [rows, setRows] = useState(songs);
   const [dragged, setDragged] = useState<string | null>(null);
   useEffect(() => setRows(songs), [songs]);
@@ -100,6 +103,7 @@ export function SongList({
               label={`${song.title} actions`}
               items={[
                 { label: "Arrangement", onSelect: () => onArrange(song.id) },
+                { label: "Edit", onSelect: () => setEditing(song) },
                 ...(rows.length > 1
                   ? [
                       { label: "Move up", disabled: index === 0, onSelect: () => place(song.id, index - 1) },
@@ -131,6 +135,23 @@ export function SongList({
             onSaved={(song) => {
               setAdding(false);
               history.record({ kind: "add", showId, song });
+            }}
+          />
+        </Modal>
+      ) : null}
+      {editing ? (
+        <Modal title="Edit song" tone="background" onClose={() => setEditing(null)}>
+          <SongForm
+            key={editing.id}
+            showId={showId}
+            song={editing}
+            action={updateSong.bind(null, showId)}
+            onSaved={(song) => {
+              const before = editing;
+              setEditing(null);
+              setRows((current) => current.map((row) => (row.id === song.id ? song : row)));
+              onEdited?.(song);
+              history.record({ kind: "edit", showId, before, after: song });
             }}
           />
         </Modal>

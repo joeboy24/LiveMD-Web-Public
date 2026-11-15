@@ -1330,8 +1330,13 @@ export function Arrangement({
                     </div>
                   </div>
                 </div>
-                <p className="mt-3 text-[12px] text-muted">Nudge if the first beat feels early or late. Section edges stay on the bar.</p>
-              </div>
+        <p className="mt-3 text-[12px] text-muted">Nudge if the first beat feels early or late. Section edges stay on the bar.</p>
+        {!rehearsal && stripOpen ? (
+          <div className="mt-3">
+            <SectionStrip sections={sections} />
+          </div>
+        ) : null}
+      </div>
               {rehearsal && sections.length > 0 ? (
                 <LyricsPane
                   sections={sections}
@@ -1351,18 +1356,9 @@ export function Arrangement({
                 />
               ) : null}
               {status ? <p className="mt-3 text-sm text-muted">{status}</p> : null}
-              {stripOpen ? (
-                <div className="sticky bottom-0 z-20 mt-auto flex shrink-0 gap-[0.5px] bg-background pt-3">
-                  {sections.map((section) => (
-                    <div
-                      key={section.id}
-                      className="flex h-[22px] min-w-fit items-center justify-center gap-1.5 overflow-hidden rounded-[2px] px-2 text-[12px] leading-none font-semibold whitespace-nowrap"
-                      style={{ flexGrow: section.bars, backgroundColor: sectionColor(section.name), color: chipInk(sectionColor(section.name)) }}
-                    >
-                      <span className="truncate">{section.name}</span>
-                      <span className="shrink-0 tabular-nums">{section.bars}</span>
-                    </div>
-                  ))}
+              {rehearsal && stripOpen ? (
+                <div className="sticky bottom-0 z-20 mt-auto shrink-0 bg-background pt-3">
+                  <SectionStrip sections={sections} />
                 </div>
               ) : null}
             </>
@@ -2170,6 +2166,23 @@ function LyricsPane({
 
 function sectionInk(name: string) {
   return name.trim().toLowerCase() === "song" ? "var(--muted)" : sectionColor(name);
+}
+
+function SectionStrip({ sections }: { sections: Array<{ id: string; name: string; bars: number }> }) {
+  return (
+    <div className="flex gap-[0.5px]">
+      {sections.map((section) => (
+        <div
+          key={section.id}
+          className="flex h-[22px] min-w-fit items-center justify-center gap-1.5 overflow-hidden rounded-[2px] px-2 text-[12px] leading-none font-semibold whitespace-nowrap"
+          style={{ flexGrow: section.bars, backgroundColor: sectionColor(section.name), color: chipInk(sectionColor(section.name)) }}
+        >
+          <span className="truncate">{section.name}</span>
+          <span className="shrink-0 tabular-nums">{section.bars}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function chipInk(color: string) {
