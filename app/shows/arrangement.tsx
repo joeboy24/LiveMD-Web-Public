@@ -6,7 +6,9 @@ import { readAudio, saveArrangement, saveMix, saveStage, saveStemLayers, signUpl
 import { busGain, layerGain, storedMix } from "./mix";
 import { SongSettings } from "./song-settings";
 import { createPitch, loadPitch, pitchLatencySamples } from "./pitch";
-import { stemRate, storedStage, storedTempo, withSourceTempo } from "./stage";
+import { prepareCueVoices, speakCue, stopCueVoices } from "./cue-voice";
+import { connectBus, performanceContext, primeOutputs, useOutputDevice } from "./outputs";
+import { routedOutput, stemRate, storedStage, storedTempo, withSourceTempo } from "./stage";
 import { playable, prepareStretch } from "./stretch";
 import { enqueueSave, flushSaves } from "./save-queue";
 import { THEME_EVENT } from "../theme";
@@ -515,7 +517,13 @@ export function Arrangement({
       reportError(result.error);
     });
     if (playingRef.current && timeChanged) startAt(playheadRef.current);
-    else for (const item of sourcesRef.current) item.pitch?.port.postMessage(cleanStage.pitch);
+    else {
+      for (const item of sourcesRef.current) item.pitch?.port.postMessage(cleanStage.pitch);
+      const context = audioRef.current;
+      if (context) {
+        for (const [id, node] of gainsRef.current) connectBus(node, context, routedOutput(id, cleanStage.route));
+      }
+    }
     if (timeChanged) warmStems();
   }
 
@@ -618,7 +626,7 @@ export function Arrangement({
   }
 
   function silenceCues(forget: boolean) {
-    window.speechSynthesis?.cancel();
+    stopCueVoices();
     if (!forget) return;
     spokenRef.current = [];
     heardBarsRef.current = null;
@@ -631,9 +639,9 @@ export function Arrangement({
     }
     heardBarsRef.current = bars;
     const gain = busGain(mixRef.current.cues, mixRef.current);
-    const synth = window.speechSynthesis;
-    if (!synth || gain <= 0.001) {
-      if (gain <= 0.001) synth?.cancel();
+    const context = audioRef.current;
+    if (!context || gain <= 0.001) {
+      if (gain <= 0.001) stopCueVoices();
       return;
     }
     const delta = bars - (previous ?? bars);
@@ -647,11 +655,7 @@ export function Arrangement({
       if (!crossed && !landed) continue;
       if (spokenRef.current.some((mark) => mark.bar === cue.bar && mark.text === text && mark.place === place)) continue;
       spokenRef.current.push({ bar: cue.bar, place, text });
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.volume = gain;
-      utterance.rate = 1;
-      synth.resume();
-      synth.speak(utterance);
+      void speakCue(context, text, gain, stageRef.current.route.guide);
     }
   }
 
@@ -718,9 +722,9 @@ export function Arrangement({
   function startAt(chart: number) {
     const layers = layersRef.current.filter((layer) => !removedRef.current.has(layer.id));
     if (!layers.some((layer) => layer.main)) return;
-    const context = audioRef.current ?? new AudioContext();
+    const context = performanceContext(audioRef.current);
     audioRef.current = context;
-    void context.resume();
+    primeOutputs(context);
     tokenRef.current += 1;
     const token = tokenRef.current;
     const previous = sourcesRef.current;
@@ -814,9 +818,9 @@ export function Arrangement({
     if (!node || node.context !== context) {
       node?.disconnect();
       node = context.createGain();
-      node.connect(context.destination);
       gainsRef.current.set(id, node);
     }
+    connectBus(node, context, routedOutput(id, stageRef.current.route));
     node.gain.value = id === "click" ? busGain(mixRef.current.click, mixRef.current) : layerGain(id, mixRef.current, ids);
     return node;
   }
@@ -840,10 +844,12 @@ export function Arrangement({
     armTokenRef.current = token;
     const showBar = !uploadRef.current;
     if (showBar) setProgress(0.08);
-    const context = audioRef.current ?? new AudioContext();
+    const context = performanceContext(audioRef.current);
     audioRef.current = context;
     if (showBar) setProgress(0.4);
-    await context.resume();
+    primeOutputs(context);
+    await useOutputDevice(context);
+    await prepareCueVoices(cuesRef.current.map((cue) => cue.text));
     if (token !== armTokenRef.current) return;
     if (showBar) setProgress(0.85);
     await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
@@ -920,7 +926,7 @@ export function Arrangement({
     for (const [id, node] of gainsRef.current) {
       node.gain.value = id === "click" ? busGain(mix.click, mix) : layerGain(id, mix, ids);
     }
-    if (busGain(mix.cues, mix) <= 0.001) window.speechSynthesis?.cancel();
+    if (busGain(mix.cues, mix) <= 0.001) stopCueVoices();
   }, [mix]);
 
   useEffect(() => {
@@ -1019,7 +1025,7 @@ export function Arrangement({
       cancelAnimationFrame(rafRef.current);
       for (const item of sourcesRef.current) release(item);
       void audioRef.current?.close();
-      window.speechSynthesis?.cancel();
+      stopCueVoices();
     };
   }, []);
 

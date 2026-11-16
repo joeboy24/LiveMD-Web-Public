@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../components/modal";
-import { canChooseDevice, chooseDevice, connectedDevice, type StageDevice } from "./outputs";
+import { canChooseDevice, chooseDevice, connectedDevice, revealDeviceName, type StageDevice } from "./outputs";
 import { displayKey, pitchNote, storedTempo } from "./stage";
 import type { SongRoute, SongStage } from "./types";
 
@@ -29,6 +29,7 @@ export function SongSettings({
 }) {
   const [device, setDevice] = useState<StageDevice | null>(null);
   const [looking, setLooking] = useState(false);
+  const [withheld, setWithheld] = useState(false);
   const stageRef = useRef(stage);
   stageRef.current = stage;
   const saved = Math.max(stage.route.click, stage.route.stems, stage.route.guide) + 1;
@@ -36,18 +37,34 @@ export function SongSettings({
 
   useEffect(() => {
     let alive = true;
-    void connectedDevice().then((next) => {
-      if (alive) setDevice(next);
-    });
+    const refresh = () => {
+      void connectedDevice().then((next) => {
+        if (alive) setDevice(next);
+      });
+    };
+    refresh();
+    navigator.mediaDevices?.addEventListener("devicechange", refresh);
     return () => {
       alive = false;
+      navigator.mediaDevices?.removeEventListener("devicechange", refresh);
     };
   }, []);
 
   async function look() {
     setLooking(true);
     const next = await chooseDevice();
-    if (next) setDevice(next);
+    if (next) {
+      setDevice(next);
+      setWithheld(!next.labeled);
+    }
+    setLooking(false);
+  }
+
+  async function reveal() {
+    setLooking(true);
+    const next = await revealDeviceName();
+    setDevice(next);
+    setWithheld(!next.labeled);
     setLooking(false);
   }
 
@@ -125,8 +142,22 @@ export function SongSettings({
         </div>
       </section>
       <section className="mt-3 rounded-2xl bg-background p-4">
-        <h3 className="text-[13px] font-semibold text-muted">This computer</h3>
-        <p className="mt-2 text-[16px] font-semibold text-ink">{device?.name ?? "Looking for an output…"}</p>
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="shrink-0 text-[13px] font-semibold text-muted">This computer</h3>
+          {device && !device.labeled && !withheld ? (
+            <button
+              type="button"
+              onClick={() => void reveal()}
+              disabled={looking}
+              className="min-w-0 truncate text-right text-[13px] font-semibold text-primary outline-none hover:text-primary-hover disabled:text-muted"
+            >
+              {looking ? "Looking…" : "Show device name"}
+            </button>
+          ) : (
+            <p className="min-w-0 truncate text-right text-[13px] font-semibold text-ink">{device?.name ?? "Looking for an output…"}</p>
+          )}
+        </div>
+        {withheld ? <p className="mt-2 text-right text-[12px] text-muted">This browser is not sharing the device name.</p> : null}
         {device ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {Array.from({ length: device.outputs }, (_, output) => {
@@ -145,7 +176,7 @@ export function SongSettings({
             })}
           </div>
         ) : null}
-        {canChooseDevice() ? (
+        {device?.labeled && canChooseDevice() ? (
           <button
             type="button"
             onClick={() => void look()}

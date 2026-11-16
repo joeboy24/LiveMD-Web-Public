@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { readAudio } from "./actions";
 import { makeClickBuffer } from "./click-track";
 import { busGain, layerGain } from "./mix";
+import { prepareCueVoices, speakCue, stopCueVoices } from "./cue-voice";
+import { connectBus, performanceContext, primeOutputs, useOutputDevice } from "./outputs";
 import { createPitch, loadPitch, pitchLatencySamples } from "./pitch";
-import { stemRate } from "./stage";
+import { routedOutput, stemRate } from "./stage";
 import { playable, prepareStretch } from "./stretch";
 import { cueSpeechPlace } from "./structure";
 import type { Song, SongCue } from "./types";
@@ -25,6 +27,7 @@ type Clock = {
   barSeconds: number;
   cues: SongCue[];
   cueGain: number;
+  cueOutput: number;
 };
 
 export function useSetlistPlayback(showId: string, songs: Song[]) {
@@ -76,7 +79,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
   }, []);
 
   function silenceCues(forget: boolean) {
-    window.speechSynthesis?.cancel();
+    stopCueVoices();
     if (!forget) return;
     spokenRef.current = [];
     heardRef.current = null;
@@ -97,9 +100,9 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
   }, [stopSources]);
 
   function arm() {
-    const context = audioRef.current ?? new AudioContext();
+    const context = performanceContext(audioRef.current);
     audioRef.current = context;
-    void context.resume();
+    primeOutputs(context);
     return context;
   }
 
@@ -119,9 +122,10 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       spokenRef.current = spokenRef.current.filter((mark) => mark.place < chart - 0.05);
     }
     heardRef.current = chart;
-    const synth = window.speechSynthesis;
-    if (!synth || gain <= 0.001) {
-      if (gain <= 0.001) synth?.cancel();
+    const context = audioRef.current;
+    const output = clockRef.current?.cueOutput ?? 0;
+    if (!context || gain <= 0.001) {
+      if (gain <= 0.001) stopCueVoices();
       return;
     }
     const delta = chart - (previous ?? chart);
@@ -135,11 +139,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       if (!crossed && !landed) continue;
       if (spokenRef.current.some((mark) => mark.bar === cue.bar && mark.text === text && mark.place === place)) continue;
       spokenRef.current.push({ bar: cue.bar, place, text });
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.volume = gain;
-      utterance.rate = 1;
-      synth.resume();
-      synth.speak(utterance);
+      void speakCue(context, text, gain, output);
     }
   }
 
@@ -158,6 +158,8 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
 
   async function load(song: Song, nextMode: Mode, resume: boolean) {
     const context = arm();
+    await useOutputDevice(context);
+    await prepareCueVoices(song.cues.map((cue) => cue.text));
     const layers = songLayers(song);
     if (layers.length === 0) return;
     const token = tokenRef.current + 1;
@@ -217,7 +219,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       if (pitch) source.connect(pitch);
       else source.connect(gain);
       pitch?.connect(gain);
-      gain.connect(context.destination);
+      connectBus(gain, context, routedOutput(layer.id, song.stage.route));
       if (layer.main) source.onended = () => finish(token, song.id);
       source.start(context.currentTime + delay, played.offset);
       live.push({ source, gain, pitch });
@@ -241,7 +243,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
         source.connect(delayNode);
         delayNode.connect(gain);
       } else source.connect(gain);
-      gain.connect(context.destination);
+      connectBus(gain, context, routedOutput("click", song.stage.route));
       source.start(context.currentTime, clickOffset);
       live.push({ source, gain, pitch: null });
     }
@@ -268,6 +270,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       barSeconds,
       cues: song.cues,
       cueGain: busGain(song.mix.cues, song.mix),
+      cueOutput: song.stage.route.guide,
     };
     setPlayState(true);
     follow();
@@ -330,7 +333,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       tokenRef.current += 1;
       cancelAnimationFrame(rafRef.current);
       stopSources();
-      window.speechSynthesis?.cancel();
+      stopCueVoices();
       void audioRef.current?.close();
       audioRef.current = null;
       cacheRef.current.clear();

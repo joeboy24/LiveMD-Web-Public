@@ -27,6 +27,12 @@ export function storedStage(value: unknown): SongStage {
   };
 }
 
+export function routedOutput(id: string, route: SongStage["route"]) {
+  if (id === "click") return route.click;
+  if (id.startsWith("guide:")) return route.guide;
+  return route.stems;
+}
+
 export function stemRate(tempo: number, stage: SongStage) {
   if (!stage.applyStem) return 1;
   const source = stage.sourceTempo ?? tempo;
