@@ -1,8 +1,10 @@
+import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyLabel } from "./components/empty-label";
 import { listShows, listSongs, showPublication } from "./shows/queries";
 import { HistoryButtons } from "./shows/history";
+import { PERFORMANCE_MODE_KEY, performanceModeFrom } from "./shows/performance-mode";
 import { SongPanel } from "./shows/song-panel";
 
 export default function Home({ searchParams }: { searchParams: Promise<{ show?: string | string[] }> }) {
@@ -15,6 +17,8 @@ export default function Home({ searchParams }: { searchParams: Promise<{ show?: 
 
 async function ShowsWorkspace({ searchParams }: { searchParams: Promise<{ show?: string | string[] }> }) {
   await connection();
+  const jar = await cookies();
+  const rehearsal = performanceModeFrom(jar.get(PERFORMANCE_MODE_KEY)?.value);
   const query = await searchParams;
   const requested = Array.isArray(query.show) ? query.show[0] : query.show;
   const shows = await listShows();
@@ -38,6 +42,7 @@ async function ShowsWorkspace({ searchParams }: { searchParams: Promise<{ show?:
       dateLabel={selected.dateLabel}
       songs={songs}
       publication={publication}
+      rehearsal={rehearsal}
     />
   );
 }

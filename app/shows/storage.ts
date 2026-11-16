@@ -1,3 +1,6 @@
+import { createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -47,6 +50,17 @@ export async function signAudioRead(showId: string, key: string) {
   if (!storage) return { error: "Audio storage isn't set up yet." };
   const url = await getSignedUrl(storage.s3, new GetObjectCommand({ Bucket: storage.bucket, Key: key }), { expiresIn: 600 });
   return { url };
+}
+
+export async function saveAudio(showId: string, key: string, destination: string) {
+  if (ownedAudioKey(showId, key) !== key) return false;
+  const storage = client();
+  if (!storage) return false;
+  const result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: key }));
+  if (!result.Body) return false;
+  const web = result.Body.transformToWebStream() as import("node:stream/web").ReadableStream;
+  await pipeline(Readable.fromWeb(web), createWriteStream(destination));
+  return true;
 }
 
 export function ownedAudioKey(showId: string, value: FormDataEntryValue | null) {

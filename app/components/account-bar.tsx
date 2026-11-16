@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { FiChevronDown, FiLogOut, FiUser } from "react-icons/fi";
+import { clearPerformanceMode } from "../shows/performance-mode";
 import { ThemeSwitch } from "./theme-switch";
 
 export function AccountBar() {

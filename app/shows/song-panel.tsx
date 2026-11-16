@@ -6,6 +6,7 @@ import { RowMenu } from "../components/row-menu";
 import { publishShow } from "./actions";
 import { Arrangement } from "./arrangement";
 import { useSetlistHistory } from "./history";
+import { PERFORMANCE_MODE_EVENT, readPerformanceMode, writePerformanceMode } from "./performance-mode";
 import { downloadPublished, publishableSongs, samePublication } from "./publication";
 import { flushSaves } from "./save-queue";
 import { SongList } from "./song-list";
@@ -18,12 +19,14 @@ export function SongPanel({
   dateLabel,
   songs,
   publication,
+  rehearsal: initialRehearsal,
 }: {
   showId: string;
   title: string;
   dateLabel: string;
   songs: Song[];
   publication: PublishedShow | null;
+  rehearsal: boolean;
 }) {
   const history = useSetlistHistory();
   const router = useRouter();
@@ -34,6 +37,7 @@ export function SongPanel({
   const [published, setPublished] = useState(publication);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [rehearsal, setRehearsal] = useState(initialRehearsal);
   if (activeShow !== showId) {
     setActiveShow(showId);
     edits.current = new Map();
@@ -90,6 +94,19 @@ export function SongPanel({
 
   useEffect(() => history.subscribe(keepSong), [history, keepSong]);
 
+  useEffect(() => {
+    function syncMode() {
+      setRehearsal(readPerformanceMode());
+    }
+    window.addEventListener(PERFORMANCE_MODE_EVENT, syncMode);
+    return () => window.removeEventListener(PERFORMANCE_MODE_EVENT, syncMode);
+  }, []);
+
+  function chooseMode(next: boolean) {
+    setRehearsal(next);
+    writePerformanceMode(next);
+  }
+
   if (arranging) {
     return (
       <section className="flex min-h-0 flex-1 flex-col">
@@ -101,6 +118,8 @@ export function SongPanel({
           onClose={() => showSong(null)}
           onOpen={showSong}
           onDraft={keepSong}
+          mode={rehearsal}
+          onMode={chooseMode}
         />
       </section>
     );

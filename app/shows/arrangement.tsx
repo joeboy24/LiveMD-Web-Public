@@ -44,6 +44,8 @@ export function Arrangement({
   onClose,
   onOpen,
   onDraft,
+  mode,
+  onMode,
 }: {
   showId: string;
   song: Song;
@@ -51,6 +53,8 @@ export function Arrangement({
   onClose: () => void;
   onOpen: (songId: string) => void;
   onDraft: (song: Song) => void;
+  mode: boolean;
+  onMode: (rehearsal: boolean) => void;
 }) {
   const [segment, setSegment] = useState<Segment>("tracks");
   const [sections, setSections] = useState<EditSection[]>(() => withIds(song.sections));
@@ -68,7 +72,7 @@ export function Arrangement({
   const [waveScale, setWaveScale] = useState(1);
   const [playing, setPlaying] = useState(false);
   const [looping, setLooping] = useState(false);
-  const [rehearsal, setRehearsal] = useState(false);
+  const rehearsal = mode;
   const [mix, setMix] = useState<SongMix>(() => storedMix(song.mix));
   const [tempo, setTempo] = useState(song.tempo);
   const [stage, setStage] = useState<SongStage>(() => storedStage(song.stage));
@@ -101,7 +105,8 @@ export function Arrangement({
   const draftRef = useRef<string[]>([]);
   const mountedRef = useRef(true);
   const productionMixRef = useRef<SongMix>(storedMix(song.mix));
-  const rehearsalRef = useRef(false);
+  const rehearsalRef = useRef(mode);
+  const modeSeen = useRef(mode);
   const mixTimer = useRef<number | null>(null);
   tempoRef.current = tempo;
   stageRef.current = stage;
@@ -144,7 +149,19 @@ export function Arrangement({
   leadRef.current = leadBeats;
   slipRef.current = slipBars;
   lyricsRef.current = lyrics;
-  mixRef.current = mix;
+  rehearsalRef.current = mode;
+  if (modeSeen.current !== mode) {
+    modeSeen.current = mode;
+    if (!mode) {
+      const production = storedMix(productionMixRef.current);
+      mixRef.current = production;
+      setMix(production);
+    } else {
+      mixRef.current = mix;
+    }
+  } else {
+    mixRef.current = mix;
+  }
 
   const layerKey = `${song.stemKey ?? ""}\n${song.guideKey ?? ""}\n${song.trackKeys.join("|")}`;
   const totalBars = Math.max(sections.reduce((sum, section) => sum + section.bars, 0), 1);
@@ -544,13 +561,12 @@ export function Arrangement({
   function toggleRehearsal() {
     const next = !rehearsalRef.current;
     if (next) flushMix();
-    rehearsalRef.current = next;
-    setRehearsal(next);
-    if (!next) {
+    else {
       const production = storedMix(productionMixRef.current);
       mixRef.current = production;
       setMix(production);
     }
+    onMode(next);
   }
 
   function leave() {
