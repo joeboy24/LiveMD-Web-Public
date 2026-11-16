@@ -1,0 +1,171 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FiMail } from "react-icons/fi";
+import { Field } from "../components/field";
+import { ListRow } from "../components/list-row";
+import { SaveButton } from "../components/save-button";
+import { Toast, type ToastTone } from "../components/toast";
+import { RowMenu } from "../components/row-menu";
+import { Monogram } from "./chrome";
+import { roles } from "./sample";
+import { addSeat, reinviteSeat, removeSeat, renameSeat, type OrganizationState } from "./actions";
+
+type SeatRecord = {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string;
+  invited: boolean;
+};
+
+const initial: OrganizationState = { error: null };
+
+export function SeatBoard({ seats }: { seats: SeatRecord[] }) {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; tone: ToastTone; id: number } | null>(null);
+  const [state, action, pending] = useActionState(async (previous: OrganizationState, formData: FormData) => {
+    const result = await addSeat(previous, formData);
+    if (!result.error) {
+      setName("");
+      setEmail("");
+      setRole("");
+      router.refresh();
+    }
+    return result;
+  }, initial);
+
+  const count = seats.length === 1 ? "1 seat" : `${seats.length} seats`;
+  const ready = name.trim().length > 0 && email.trim().length > 0 && role.length > 0;
+  return (
+    <div>
+      {notice ? <Toast key={notice.id} message={notice.text} tone={notice.tone} onDone={() => setNotice(null)} /> : null}
+      <form action={action} className="rounded-2xl bg-surface p-5">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Name" name="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" />
+          <Field label="Email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" />
+        </div>
+        <RoleField className="mt-3" value={role} onChange={setRole} />
+        {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
+        <SaveButton icon={FiMail} pending={pending} pendingLabel="Inviting" disabled={pending || !ready} className="mt-4">
+          Invite
+        </SaveButton>
+      </form>
+      <p className="mt-5 text-[13px] font-semibold text-muted">{count}</p>
+      <ul className="mt-3 grid gap-2">
+        {seats.map((seat) => (
+          <li key={seat.id}>
+            {editing === seat.id ? (
+              <RenameSeat
+                seat={seat}
+                onDone={() => {
+                  setEditing(null);
+                  setError(null);
+                  router.refresh();
+                }}
+                onError={setError}
+              />
+            ) : (
+              <ListRow
+                leading={<Monogram name={seat.name} />}
+                title={seat.name}
+                meta={seatMeta(seat)}
+                trailing={
+                  <RowMenu
+                    label={`${seat.name} actions`}
+                    items={[
+                      { label: "Edit", onSelect: () => setEditing(seat.id) },
+                      ...(seat.invited
+                        ? [{
+                            label: "Resend",
+                            onSelect: () => {
+                              void reinviteSeat(seat.id).then((result) => {
+                                setError(result.error);
+                                setNotice(result.error ? null : { text: "Invited again.", tone: "success", id: Date.now() });
+                                if (!result.error) router.refresh();
+                              });
+                            },
+                          }]
+                        : []),
+                      {
+                        label: "Remove",
+                        disabled: seats.length < 2,
+                        onSelect: () => {
+                          void removeSeat(seat.id).then((result) => {
+                            setError(result.error);
+                            if (!result.error) router.refresh();
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                }
+              />
+            )}
+          </li>
+        ))}
+      </ul>
+      {error ? <p className="mt-3 text-sm text-[#e4372d]">{error}</p> : null}
+    </div>
+  );
+}
+
+function seatMeta(seat: SeatRecord) {
+  return [seat.role, seat.email, seat.invited ? "Invited" : ""].filter(Boolean).join(" · ");
+}
+
+function RoleField({ value, onChange, className = "" }: { value: string; onChange: (role: string) => void; className?: string }) {
+  return (
+    <label className={`grid gap-1.5 ${className}`}>
+      <span className="text-[13px] font-semibold text-muted">Role</span>
+      <select
+        name="role"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-12 rounded-xl bg-background px-3 text-[15px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
+      >
+        <option value="">Choose a role</option>
+        {roles.map((role) => (
+          <option key={role.name} value={role.name}>
+            {role.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function RenameSeat({
+  seat,
+  onDone,
+  onError,
+}: {
+  seat: SeatRecord;
+  onDone: () => void;
+  onError: (message: string) => void;
+}) {
+  const [name, setName] = useState(seat.name);
+  const [email, setEmail] = useState(seat.email ?? "");
+  const [role, setRole] = useState(seat.role);
+  const [state, action, pending] = useActionState(async (previous: OrganizationState, formData: FormData) => {
+    const result = await renameSeat(seat.id, previous, formData);
+    if (result.error) onError(result.error);
+    else onDone();
+    return result;
+  }, initial);
+  return (
+    <form action={action} className="grid gap-2 rounded-xl bg-surface p-3">
+      <Field label="Name" name="name" value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+      <Field label="Email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" />
+      <RoleField value={role} onChange={setRole} />
+      {state.error ? <p className="text-sm text-[#e4372d]">{state.error}</p> : null}
+      <SaveButton pending={pending} disabled={pending || name.trim().length === 0 || role.length === 0 || (seat.invited && email.trim().length === 0)} />
+    </form>
+  );
+}

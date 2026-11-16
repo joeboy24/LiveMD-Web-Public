@@ -1,4 +1,5 @@
 import { getSql } from "../db";
+import { organizationId } from "../organization/queries";
 import { storedMix } from "./mix";
 import { storedStage } from "./stage";
 import { offlinePackage, publishedShow, snapshotSongs } from "./publication";
@@ -30,12 +31,21 @@ export async function listShows(): Promise<Show[]> {
 
 export async function publishedShowRows() {
   const sql = getSql();
-  const rows = await sql`
-    select id, title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as snapshot
-    from shows
-    where published_at is not null
-    order by performed_on desc, created_at desc
-  `;
+  const orgId = await organizationId();
+  const rows = orgId
+    ? await sql`
+        select id, title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as snapshot
+        from shows
+        where published_at is not null
+          and (organization_id is null or organization_id = ${orgId})
+        order by performed_on desc, created_at desc
+      `
+    : await sql`
+        select id, title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as snapshot
+        from shows
+        where published_at is not null
+        order by performed_on desc, created_at desc
+      `;
   return rows.flatMap((row) => {
     const songs = snapshotSongs(row.snapshot);
     const pack = songs ? offlinePackage(songs) : null;

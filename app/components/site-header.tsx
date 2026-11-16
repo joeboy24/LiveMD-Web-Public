@@ -2,27 +2,30 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FiMusic, FiShield, FiUsers } from "react-icons/fi";
+import { FiMusic } from "react-icons/fi";
 import { LuBuilding2 } from "react-icons/lu";
 import type { IconType } from "react-icons";
+import type { ReactNode } from "react";
 import { AccountBar } from "./account-bar";
 
-const links: { href: string; label: string; icon: IconType }[] = [
-  { href: "/", label: "Shows", icon: FiMusic },
-  { href: "/organization", label: "Organization", icon: LuBuilding2 },
-  { href: "/organization/seats", label: "Seats", icon: FiUsers },
-  { href: "/organization/roles", label: "Roles", icon: FiShield },
+const links: { href: string; label: string; icon: IconType; current: (pathname: string) => boolean }[] = [
+  { href: "/", label: "Shows", icon: FiMusic, current: (pathname) => pathname === "/" },
+  { href: "/organization", label: "Organization", icon: LuBuilding2, current: (pathname) => pathname.startsWith("/organization") },
 ];
 
-export function HeaderFallback() {
-  return <HeaderFrame pathname={null} />;
+export function SiteHeader({ buttonName, menuName }: { buttonName: ReactNode; menuName: ReactNode }) {
+  return <HeaderFrame pathname={usePathname()} buttonName={buttonName} menuName={menuName} />;
 }
 
-export function SiteHeader() {
-  return <HeaderFrame pathname={usePathname()} />;
-}
-
-function HeaderFrame({ pathname }: { pathname: string | null }) {
+function HeaderFrame({
+  pathname,
+  buttonName,
+  menuName,
+}: {
+  pathname: string | null;
+  buttonName: ReactNode;
+  menuName: ReactNode;
+}) {
   return (
     <header className="border-b border-surface-elevated bg-surface">
       <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-3 py-3.5 pr-4 pl-4">
@@ -38,7 +41,7 @@ function HeaderFrame({ pathname }: { pathname: string | null }) {
         <span aria-hidden className="hidden h-6 w-px bg-surface-elevated sm:block" />
         <nav className="flex flex-wrap items-center gap-0.5 rounded-full bg-background p-0.5 ring-1 ring-surface-elevated" aria-label="Site">
           {links.map((link) => {
-            const selected = pathname === link.href;
+            const selected = pathname !== null && link.current(pathname);
             const Icon = link.icon;
             return (
               <Link
@@ -57,7 +60,9 @@ function HeaderFrame({ pathname }: { pathname: string | null }) {
             );
           })}
         </nav>
-        {pathname === null ? <span className="ml-auto h-9 w-44" /> : <div className="ml-auto"><AccountBar /></div>}
+        <div className="ml-auto">
+          <AccountBar buttonName={buttonName} menuName={menuName} />
+        </div>
       </div>
     </header>
   );

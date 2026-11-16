@@ -1,3 +1,23 @@
+create table if not exists organizations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists seats (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations (id),
+  name text not null,
+  email text,
+  role text not null default 'Owner',
+  invited_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists seats_organization_email
+  on seats (organization_id, lower(email))
+  where email is not null;
+
 create table if not exists shows (
   id uuid primary key default gen_random_uuid(),
   title text not null,

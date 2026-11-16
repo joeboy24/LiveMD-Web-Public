@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { Suspense } from "react";
 import { IconRail } from "./components/icon-rail";
-import { HeaderFallback, SiteHeader } from "./components/site-header";
+import { OrganizationLabel } from "./components/organization-header";
+import { SiteHeader } from "./components/site-header";
 import { SetlistHistory } from "./shows/history";
 import { ShowSidebar } from "./shows/show-sidebar";
 import { THEME_KEY } from "./theme";
@@ -33,9 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Script id="livemd-theme" strategy="beforeInteractive">
           {themeScript}
         </Script>
-        <Suspense fallback={<HeaderFallback />}>
-          <SiteHeader />
-        </Suspense>
+        <SiteHeader buttonName={<OrganizationLabel />} menuName={<OrganizationLabel />} />
         <SetlistHistory>
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[300px_minmax(0,3fr)_minmax(180px,1fr)_3.25rem] md:overflow-hidden">
           <aside className="flex min-h-0 w-full min-w-0 flex-col overflow-x-hidden px-4 pt-4 md:h-full md:overflow-hidden md:border-r md:border-surface-elevated md:px-3 md:py-4">

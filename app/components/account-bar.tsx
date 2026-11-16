@@ -1,12 +1,13 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { FiChevronDown, FiLogOut, FiUser } from "react-icons/fi";
 import { clearPerformanceMode } from "../shows/performance-mode";
 import { ThemeSwitch } from "./theme-switch";
 
-export function AccountBar() {
+export function AccountBar({ buttonName, menuName }: { buttonName: ReactNode; menuName: ReactNode }) {
   const [menu, setMenu] = useState<"organization" | "profile" | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -29,10 +30,10 @@ export function AccountBar() {
           onClick={() => setMenu((current) => (current === "organization" ? null : "organization"))}
           className="flex h-9 items-center gap-2 rounded-full bg-background px-4 text-[14px] font-semibold text-ink outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-primary-hover"
         >
-          Organization
+          {buttonName}
           <FiChevronDown aria-hidden className={`size-4 text-muted transition-transform ${menu === "organization" ? "rotate-180" : ""}`} />
         </button>
-        {menu === "organization" ? <OrganizationMenu onClose={() => setMenu(null)} /> : null}
+        {menu === "organization" ? <OrganizationMenu name={menuName} onClose={() => setMenu(null)} /> : null}
       </div>
       <div className="relative">
         <button
@@ -51,7 +52,7 @@ export function AccountBar() {
   );
 }
 
-function OrganizationMenu({ onClose }: { onClose: () => void }) {
+function OrganizationMenu({ name, onClose }: { name: ReactNode; onClose: () => void }) {
   return (
     <div role="menu" className="absolute right-0 top-11 z-20 w-64 overflow-hidden rounded-2xl bg-surface-elevated shadow-[0_16px_40px_rgb(0_0_0/0.4)]">
       <div className="flex items-center justify-between px-4 py-3">
@@ -63,7 +64,7 @@ function OrganizationMenu({ onClose }: { onClose: () => void }) {
         onClick={onClose}
         className="block border-t border-background px-4 py-3 text-[15px] font-semibold text-ink outline-none hover:bg-background focus-visible:bg-background"
       >
-        Organization
+        {name}
       </Link>
     </div>
   );
