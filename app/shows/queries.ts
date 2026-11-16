@@ -1,7 +1,7 @@
 import { getSql } from "../db";
 import { storedMix } from "./mix";
 import { storedStage } from "./stage";
-import { publishedShow, snapshotSongs } from "./publication";
+import { offlinePackage, publishedShow, snapshotSongs } from "./publication";
 import { parseCues, parseSections } from "./structure";
 import type { PublishedShow, Show, Song } from "./types";
 
@@ -26,6 +26,30 @@ export async function listShows(): Promise<Show[]> {
     published: row.published === true,
     ...showDate(row.performedOn),
   }));
+}
+
+export async function publishedShowRows() {
+  const sql = getSql();
+  const rows = await sql`
+    select id, title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as snapshot
+    from shows
+    where published_at is not null
+    order by performed_on desc, created_at desc
+  `;
+  return rows.flatMap((row) => {
+    const songs = snapshotSongs(row.snapshot);
+    const pack = songs ? offlinePackage(songs) : null;
+    if (!pack || pack.songs.length === 0) return [];
+    return [
+      {
+        id: String(row.id),
+        title: String(row.title),
+        performedOn: String(row.performedOn).slice(0, 10),
+        publishedAt: String(row.publishedAt),
+        songCount: pack.songs.length,
+      },
+    ];
+  });
 }
 
 export async function showPublication(showId: string): Promise<PublishedShow | null> {
