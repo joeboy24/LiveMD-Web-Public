@@ -3,11 +3,23 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { FiChevronDown, FiLogOut, FiUser } from "react-icons/fi";
+import { FiChevronDown, FiLogIn, FiLogOut, FiUser } from "react-icons/fi";
+import { signOut } from "../auth/actions";
+import type { SessionAccount } from "../auth/queries";
 import { clearPerformanceMode } from "../shows/performance-mode";
 import { ThemeSwitch } from "./theme-switch";
 
-export function AccountBar({ buttonName, menuName }: { buttonName: ReactNode; menuName: ReactNode }) {
+export function AccountBar({
+  account,
+  role = null,
+  buttonName,
+  menuName,
+}: {
+  account: SessionAccount | null;
+  role?: string | null;
+  buttonName: ReactNode;
+  menuName: ReactNode;
+}) {
   const [menu, setMenu] = useState<"organization" | "profile" | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -46,7 +58,7 @@ export function AccountBar({ buttonName, menuName }: { buttonName: ReactNode; me
         >
           <FiUser aria-hidden className="size-4" />
         </button>
-        {menu === "profile" ? <ProfileMenu /> : null}
+        {menu === "profile" ? <ProfileMenu account={account} role={role} onClose={() => setMenu(null)} /> : null}
       </div>
     </div>
   );
@@ -70,7 +82,9 @@ function OrganizationMenu({ name, onClose }: { name: ReactNode; onClose: () => v
   );
 }
 
-function ProfileMenu() {
+function ProfileMenu({ account, role, onClose }: { account: SessionAccount | null; role: string | null; onClose: () => void }) {
+  const title = account ? account.name ?? account.email : "Account";
+  const detail = account ? (role ? (account.name ? `${role} · ${account.email}` : role) : "Signed in") : "Sign in to take a seat.";
   return (
     <div role="menu" className="absolute right-0 top-11 z-20 w-72 overflow-hidden rounded-2xl bg-surface-elevated shadow-[0_16px_40px_rgb(0_0_0/0.4)]">
       <div className="flex items-center gap-3 px-4 py-3">
@@ -78,23 +92,45 @@ function ProfileMenu() {
           <FiUser aria-hidden className="size-4" />
         </span>
         <span className="min-w-0">
-          <span className="block text-[14px] font-semibold text-ink">Account</span>
-          <span className="block text-[12px] text-muted">Profile details will show here.</span>
+          <span className="block truncate text-[14px] font-semibold text-ink">{title}</span>
+          <span className="block truncate text-[12px] text-muted">{detail}</span>
         </span>
       </div>
       <div className="border-t border-background px-4 py-3">
         <p className="mb-2 text-[11px] font-semibold tracking-[0.14em] text-muted">APPEARANCE</p>
         <ThemeSwitch />
       </div>
+      {account ? <LogOut /> : <SignIn onClose={onClose} />}
+    </div>
+  );
+}
+
+function SignIn({ onClose }: { onClose: () => void }) {
+  return (
+    <Link
+      href="/sign-in"
+      role="menuitem"
+      onClick={onClose}
+      className="flex w-full items-center justify-between border-t border-background px-4 py-3 text-left text-[15px] text-ink outline-none hover:bg-background focus-visible:bg-background"
+    >
+      Sign in
+      <FiLogIn aria-hidden className="size-4" />
+    </Link>
+  );
+}
+
+function LogOut() {
+  return (
+    <form action={signOut}>
       <button
-        type="button"
+        type="submit"
         role="menuitem"
-        disabled
-        className="flex w-full items-center justify-between border-t border-background px-4 py-3 text-left text-[15px] text-disabled"
+        onClick={() => clearPerformanceMode()}
+        className="flex w-full items-center justify-between border-t border-background px-4 py-3 text-left text-[15px] text-ink outline-none hover:bg-background focus-visible:bg-background"
       >
         Log out
         <FiLogOut aria-hidden className="size-4" />
       </button>
-    </div>
+    </form>
   );
 }

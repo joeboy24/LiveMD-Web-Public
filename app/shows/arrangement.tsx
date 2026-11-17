@@ -46,6 +46,8 @@ export function Arrangement({
   onDraft,
   mode,
   onMode,
+  canEdit = true,
+  canStage = true,
 }: {
   showId: string;
   song: Song;
@@ -55,6 +57,8 @@ export function Arrangement({
   onDraft: (song: Song) => void;
   mode: boolean;
   onMode: (rehearsal: boolean) => void;
+  canEdit?: boolean;
+  canStage?: boolean;
 }) {
   const [segment, setSegment] = useState<Segment>("tracks");
   const [sections, setSections] = useState<EditSection[]>(() => withIds(song.sections));
@@ -311,6 +315,7 @@ export function Arrangement({
     nextTracks = trackKeysRef.current.slice(),
     nextGuide = guideKeyRef.current,
   ) {
+    if (!canEdit) return;
     if (record) remember();
     const tracksChanged = nextGuide !== guideKeyRef.current || !sameKeys(nextTracks, trackKeysRef.current);
     if (tracksChanged) {
@@ -488,6 +493,7 @@ export function Arrangement({
   }
 
   function changeMix(next: SongMix) {
+    if (!canEdit) return;
     const clean = storedMix(next);
     mixRef.current = clean;
     setMix(clean);
@@ -517,6 +523,7 @@ export function Arrangement({
   }
 
   function commitPerformance(nextTempo: number, nextStage: SongStage) {
+    if (!canEdit && !canStage) return;
     const previousTempo = tempoRef.current;
     const previous = stageRef.current;
     const cleanTempo = storedTempo(nextTempo);
@@ -1005,6 +1012,7 @@ export function Arrangement({
   }
 
   async function addAudio(kind: "track" | "guide", file: File) {
+    if (!canEdit) return;
     if (kind === "track" && trackKeysRef.current.length >= 1) return;
     if (kind === "guide" && guideKeyRef.current) return;
     setAddingAudio(kind);
@@ -1075,24 +1083,28 @@ export function Arrangement({
         </button>
         <h2 className="truncate text-center text-[17px] font-semibold text-ink">{song.title}</h2>
         <div className="flex items-center">
-          <IconButton label="Undo" disabled={!canUndo} onClick={undo}>
-            <UndoIcon />
-          </IconButton>
-          <IconButton label="Redo" disabled={!canRedo} onClick={redo}>
-            <RedoIcon />
-          </IconButton>
-          <RowMenu
-            label="Arrangement actions"
-            items={[
-              ...(canAddTrack
-                ? [{ label: "Add a track", disabled: addingAudio !== null, onSelect: () => trackInputRef.current?.click() }]
-                : []),
-              ...(canAddGuide
-                ? [{ label: "Add a guide", disabled: addingAudio !== null, onSelect: () => guideInputRef.current?.click() }]
-                : []),
-              { label: "Reset", onSelect: reset },
-            ]}
-          />
+          {canEdit ? (
+            <>
+              <IconButton label="Undo" disabled={!canUndo} onClick={undo}>
+                <UndoIcon />
+              </IconButton>
+              <IconButton label="Redo" disabled={!canRedo} onClick={redo}>
+                <RedoIcon />
+              </IconButton>
+              <RowMenu
+                label="Arrangement actions"
+                items={[
+                  ...(canAddTrack
+                    ? [{ label: "Add a track", disabled: addingAudio !== null, onSelect: () => trackInputRef.current?.click() }]
+                    : []),
+                  ...(canAddGuide
+                    ? [{ label: "Add a guide", disabled: addingAudio !== null, onSelect: () => guideInputRef.current?.click() }]
+                    : []),
+                  { label: "Reset", onSelect: reset },
+                ]}
+              />
+            </>
+          ) : null}
           <input
             ref={trackInputRef}
             type="file"
@@ -1209,7 +1221,10 @@ export function Arrangement({
                   open={layersOpen}
                   railRef={railRef}
                   onToggle={() => setLayersOpen((open) => !open)}
-                  onSettings={() => setSettingsOpen(true)}
+                  onSettings={() => {
+                    if (canEdit || canStage) setSettingsOpen(true);
+                  }}
+                  showSettings={canEdit || canStage}
                   onChannel={(bus, channel) => changeMix({ ...mixRef.current, [bus]: channel })}
                 />
                 <div className="w-px shrink-0 bg-background" />
@@ -2504,6 +2519,7 @@ function TrackRail({
   onToggle,
   onSettings,
   onChannel,
+  showSettings = true,
 }: {
   mix: SongMix;
   canMix: boolean;
@@ -2512,20 +2528,23 @@ function TrackRail({
   onToggle: () => void;
   onSettings: () => void;
   onChannel: (bus: "stems" | "click" | "cues", channel: MixChannel) => void;
+  showSettings?: boolean;
 }) {
   return (
     <div ref={railRef} className="relative flex w-[196px] shrink-0 flex-col rounded-l-[14px] bg-background/45" style={{ height: rulerHeight + laneHeight }}>
-      <button
-        type="button"
-        aria-label="Song settings"
-        onClick={onSettings}
-        className="absolute top-[2px] mt-0.5 right-2.5 flex h-[22px] items-center gap-1 rounded-md bg-surface-elevated pr-1.5 pl-0 text-[11px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover"
-      >
-        <span className="grid size-[22px] place-items-center">
-          <GearIcon />
-        </span>
-        setup
-      </button>
+      {showSettings ? (
+        <button
+          type="button"
+          aria-label="Song settings"
+          onClick={onSettings}
+          className="absolute top-[2px] mt-0.5 right-2.5 flex h-[22px] items-center gap-1 rounded-md bg-surface-elevated pr-1.5 pl-0 text-[11px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover"
+        >
+          <span className="grid size-[22px] place-items-center">
+            <GearIcon />
+          </span>
+          setup
+        </button>
+      ) : null}
       <div style={{ height: rulerHeight }} />
       <div className="flex min-h-0 flex-1 flex-col">
         <TrackLane title="Stems" color="#076FBF" channel={mix.stems} onChange={(channel) => onChannel("stems", channel)}>

@@ -1,15 +1,22 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { denied } from "../auth/access";
+import { appOrigin, mailConfigured, sendMail } from "../auth/mail";
+import { createSignInLink, dropSignInLink, readSessionAccount } from "../auth/queries";
 import { getSql } from "../db";
 import { readOrganization } from "./queries";
 import { roles } from "./sample";
 
 export type OrganizationState = {
   error: string | null;
+  sent?: boolean;
+  saved?: boolean;
 };
 
 export async function createOrganization(_state: OrganizationState, formData: FormData): Promise<OrganizationState> {
+  const block = await denied("organize");
+  if (block) return { error: block };
   const name = cleanName(formData.get("name"));
   const seat = cleanName(formData.get("seat"));
   if (!name) return { error: "Enter an organization name." };
@@ -24,10 +31,18 @@ export async function createOrganization(_state: OrganizationState, formData: Fo
     returning id
   `;
   const id = String(rows[0].id);
-  await sql`
-    insert into seats (organization_id, name, role)
-    values (${id}, ${seat}, 'Owner')
-  `;
+  const account = await readSessionAccount();
+  if (account) {
+    await sql`
+      insert into seats (organization_id, name, email, role, account_id)
+      values (${id}, ${seat}, ${account.email}, 'Owner', ${account.id})
+    `;
+  } else {
+    await sql`
+      insert into seats (organization_id, name, role)
+      values (${id}, ${seat}, 'Owner')
+    `;
+  }
   await sql`
     update shows
     set organization_id = ${id}
@@ -38,6 +53,8 @@ export async function createOrganization(_state: OrganizationState, formData: Fo
 }
 
 export async function renameOrganization(_state: OrganizationState, formData: FormData): Promise<OrganizationState> {
+  const block = await denied("organize");
+  if (block) return { error: block };
   const name = cleanName(formData.get("name"));
   if (!name) return { error: "Enter an organization name." };
   const organization = await readOrganization();
@@ -49,6 +66,8 @@ export async function renameOrganization(_state: OrganizationState, formData: Fo
 }
 
 export async function addSeat(_state: OrganizationState, formData: FormData): Promise<OrganizationState> {
+  const block = await denied("organize");
+  if (block) return { error: block };
   const name = cleanName(formData.get("name"));
   const email = cleanEmail(formData.get("email"));
   const role = cleanRole(formData.get("role"));
@@ -64,10 +83,13 @@ export async function addSeat(_state: OrganizationState, formData: FormData): Pr
     values (${organization.id}, ${name}, ${email}, ${role}, now())
   `;
   revalidatePath("/", "layout");
-  return { error: null };
+  const mailed = await emailSeat(email, organization.name);
+  return { error: mailed.error, sent: mailed.sent, saved: true };
 }
 
 export async function renameSeat(seatId: string, _state: OrganizationState, formData: FormData): Promise<OrganizationState> {
+  const block = await denied("organize");
+  if (block) return { error: block };
   const name = cleanName(formData.get("name"));
   const email = cleanEmail(formData.get("email"));
   const role = cleanRole(formData.get("role"));
@@ -95,6 +117,8 @@ export async function renameSeat(seatId: string, _state: OrganizationState, form
 }
 
 export async function reinviteSeat(seatId: string): Promise<OrganizationState> {
+  const block = await denied("organize");
+  if (block) return { error: block };
   if (!isId(seatId)) return { error: "That seat is missing." };
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
@@ -109,10 +133,14 @@ export async function reinviteSeat(seatId: string): Promise<OrganizationState> {
   `;
   if (!rows[0]) return { error: "That seat is missing." };
   revalidatePath("/", "layout");
-  return { error: null };
+  if (!seat.email) return { error: "Enter an email." };
+  const mailed = await emailSeat(seat.email, organization.name);
+  return { error: mailed.error, sent: mailed.sent };
 }
 
 export async function removeSeat(seatId: string): Promise<OrganizationState> {
+  const block = await denied("organize");
+  if (block) return { error: block };
   if (!isId(seatId)) return { error: "That seat is missing." };
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
@@ -145,6 +173,22 @@ function cleanEmail(value: FormDataEntryValue | null) {
 function cleanRole(value: FormDataEntryValue | null) {
   const role = String(value ?? "").trim();
   return roleNames.has(role) ? role : "";
+}
+
+async function emailSeat(email: string, orgName: string) {
+  if (!mailConfigured()) return { error: null, sent: false };
+  const token = await createSignInLink(email);
+  const url = `${await appOrigin()}/sign-in/verify?token=${encodeURIComponent(token)}`;
+  const sent = await sendMail(
+    email,
+    `You're invited to ${orgName}`,
+    `You're invited to ${orgName} on Live MD.\n\nOpen this link to take your seat. It expires in 15 minutes.\n\n${url}`,
+  );
+  if (sent.error) {
+    await dropSignInLink(token);
+    return { error: "The email could not be sent.", sent: false };
+  }
+  return { error: null, sent: true };
 }
 
 function isId(value: string) {

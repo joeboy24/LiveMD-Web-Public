@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyLabel } from "./components/empty-label";
+import { readAccess } from "./auth/access";
 import { listShows, listSongs, showPublication } from "./shows/queries";
 import { HistoryButtons } from "./shows/history";
 import { PERFORMANCE_MODE_KEY, performanceModeFrom } from "./shows/performance-mode";
@@ -25,6 +26,7 @@ async function ShowsWorkspace({ searchParams }: { searchParams: Promise<{ show?:
   const selected = shows.find((show) => show.id === requested) ?? null;
   const songs = selected ? await listSongs(selected.id) : [];
   const publication = selected ? await showPublication(selected.id) : null;
+  const access = await readAccess();
 
   if (!selected) {
     return (
@@ -43,6 +45,10 @@ async function ShowsWorkspace({ searchParams }: { searchParams: Promise<{ show?:
       songs={songs}
       publication={publication}
       rehearsal={rehearsal}
+      canEdit={access.prepare}
+      canPlay={access.transport}
+      canOpen={access.chart}
+      canStage={access.stage}
     />
   );
 }

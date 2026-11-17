@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { songCountLabel } from "../shows/format";
 import { listShows } from "../shows/queries";
 import { AreaLinks, PageIntro, Stat } from "./chrome";
+import { readSessionAccount } from "../auth/queries";
 import { OrganizationForm } from "./organization-form";
 import { readOrganization } from "./queries";
 
@@ -15,7 +16,7 @@ export default function OrganizationPage() {
 }
 
 async function OrganizationBody() {
-  const organization = await readOrganization();
+  const [organization, account] = await Promise.all([readOrganization(), readSessionAccount()]);
   if (!organization) {
     return (
       <div className="grid gap-8">
@@ -26,7 +27,7 @@ async function OrganizationBody() {
         />
         <section className="max-w-xl rounded-2xl bg-surface p-5">
           <h2 className="text-[15px] font-semibold text-ink">Name</h2>
-          <OrganizationForm name={null} />
+          <OrganizationForm name={null} personName={account?.name ?? null} />
         </section>
         <AreaLinks />
       </div>

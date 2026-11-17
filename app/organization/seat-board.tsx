@@ -32,10 +32,17 @@ export function SeatBoard({ seats }: { seats: SeatRecord[] }) {
   const [notice, setNotice] = useState<{ text: string; tone: ToastTone; id: number } | null>(null);
   const [state, action, pending] = useActionState(async (previous: OrganizationState, formData: FormData) => {
     const result = await addSeat(previous, formData);
-    if (!result.error) {
+    if (result.saved || !result.error) {
       setName("");
       setEmail("");
       setRole("");
+      if (!result.error) {
+        setNotice({
+          text: result.sent ? "Invitation sent." : "Seat saved. No email was sent.",
+          tone: result.sent ? "success" : "info",
+          id: Date.now(),
+        });
+      }
       router.refresh();
     }
     return result;
@@ -83,13 +90,21 @@ export function SeatBoard({ seats }: { seats: SeatRecord[] }) {
                       { label: "Edit", onSelect: () => setEditing(seat.id) },
                       ...(seat.invited
                         ? [{
-                            label: "Resend",
+                            label: "Invite again",
                             onSelect: () => {
-                              void reinviteSeat(seat.id).then((result) => {
-                                setError(result.error);
-                                setNotice(result.error ? null : { text: "Invited again.", tone: "success", id: Date.now() });
-                                if (!result.error) router.refresh();
-                              });
+                              void reinviteSeat(seat.id).then(
+                                (result) => {
+                                  setError(null);
+                                  setNotice({
+                                    text: result.error ?? (result.sent ? "Invitation sent." : "Invitation refreshed. No email was sent."),
+                                    tone: result.error ? "warning" : result.sent ? "success" : "info",
+                                    id: Date.now(),
+                                  });
+                                },
+                                () => {
+                                  setNotice({ text: "The invitation could not be sent again.", tone: "warning", id: Date.now() });
+                                },
+                              );
                             },
                           }]
                         : []),

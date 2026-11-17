@@ -18,12 +18,18 @@ export function SongList({
   onArrange,
   onEdited,
   playback,
+  canEdit = true,
+  canPlay = true,
+  canOpen = true,
 }: {
   showId: string;
   songs: Song[];
   onArrange: (songId: string) => void;
   onEdited?: (song: Song) => void;
   playback: Playback;
+  canEdit?: boolean;
+  canPlay?: boolean;
+  canOpen?: boolean;
 }) {
   const history = useSetlistHistory();
   const [adding, setAdding] = useState(false);
@@ -50,6 +56,7 @@ export function SongList({
             key={song.id}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
+              if (!canEdit) return;
               event.preventDefault();
               const songId = event.dataTransfer.getData("text/plain");
               setDragged(null);
@@ -57,7 +64,7 @@ export function SongList({
             }}
             className={`flex h-16 items-center gap-3 rounded-xl bg-surface px-3 ${dragged === song.id ? "opacity-50" : ""}`}
           >
-            {rows.length > 1 ? (
+            {canEdit && rows.length > 1 ? (
               <button
                 type="button"
                 draggable
@@ -79,7 +86,7 @@ export function SongList({
               <span className="block truncate text-[16px] font-semibold text-ink">{song.title}</span>
               <span className="mt-0.5 block truncate text-[13px] text-muted">{songLine(song)}</span>
             </span>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className={`flex shrink-0 items-center gap-1 ${canPlay ? "" : "hidden"}`}>
               <button
                 type="button"
                 aria-label={playback.activeId === song.id && playback.playing ? `Pause ${song.title}` : `Play ${song.title}`}
@@ -102,30 +109,36 @@ export function SongList({
             <RowMenu
               label={`${song.title} actions`}
               items={[
-                { label: "Arrangement", onSelect: () => onArrange(song.id) },
-                { label: "Edit", onSelect: () => setEditing(song) },
-                ...(rows.length > 1
+                ...(canOpen ? [{ label: "Arrangement", onSelect: () => onArrange(song.id) }] : []),
+                ...(canEdit
                   ? [
-                      { label: "Move up", disabled: index === 0, onSelect: () => place(song.id, index - 1) },
-                      { label: "Move down", disabled: index === rows.length - 1, onSelect: () => place(song.id, index + 1) },
+                      { label: "Edit", onSelect: () => setEditing(song) },
+                      ...(rows.length > 1
+                        ? [
+                            { label: "Move up", disabled: index === 0, onSelect: () => place(song.id, index - 1) },
+                            { label: "Move down", disabled: index === rows.length - 1, onSelect: () => place(song.id, index + 1) },
+                          ]
+                        : []),
+                      { label: "Download", disabled: true },
+                      { label: "Delete", onSelect: () => void history.removeSong(showId, song) },
                     ]
                   : []),
-                { label: "Download", disabled: true },
-                { label: "Delete", onSelect: () => void history.removeSong(showId, song) },
               ]}
             />
           </li>
         ))}
-        <li>
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="relative flex h-16 w-full items-center rounded-xl bg-surface px-3 text-disabled outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-primary-hover"
-          >
-            <span className="w-[18px] text-left text-[15px] font-semibold">{rows.length + 1}</span>
-            <span className="absolute inset-0 grid place-items-center text-[18px] font-semibold">+</span>
-          </button>
-        </li>
+        {canEdit ? (
+          <li>
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="relative flex h-16 w-full items-center rounded-xl bg-surface px-3 text-disabled outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-primary-hover"
+            >
+              <span className="w-[18px] text-left text-[15px] font-semibold">{rows.length + 1}</span>
+              <span className="absolute inset-0 grid place-items-center text-[18px] font-semibold">+</span>
+            </button>
+          </li>
+        ) : null}
       </ul>
       {adding ? (
         <Modal title="Add song" tone="background" onClose={() => setAdding(false)}>

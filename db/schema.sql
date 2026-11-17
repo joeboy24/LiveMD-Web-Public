@@ -11,6 +11,34 @@ create table if not exists seats (
   email text,
   role text not null default 'Owner',
   invited_at timestamptz,
+  accepted_at timestamptz,
+  account_id uuid,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists accounts (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  name text,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists accounts_email
+  on accounts (lower(email));
+
+create table if not exists sessions (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references accounts (id),
+  token_hash text not null unique,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists sign_in_links (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  token_hash text not null unique,
+  expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
 

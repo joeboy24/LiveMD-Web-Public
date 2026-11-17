@@ -6,23 +6,32 @@ import { FiMusic } from "react-icons/fi";
 import { LuBuilding2 } from "react-icons/lu";
 import type { IconType } from "react-icons";
 import type { ReactNode } from "react";
-import { AccountBar } from "./account-bar";
 
 const links: { href: string; label: string; icon: IconType; current: (pathname: string) => boolean }[] = [
   { href: "/", label: "Shows", icon: FiMusic, current: (pathname) => pathname === "/" },
   { href: "/organization", label: "Organization", icon: LuBuilding2, current: (pathname) => pathname.startsWith("/organization") },
 ];
 
-export function SiteHeader({ buttonName, menuName }: { buttonName: ReactNode; menuName: ReactNode }) {
-  return <HeaderFrame pathname={usePathname()} buttonName={buttonName} menuName={menuName} />;
+export function SiteHeader({
+  accountBar,
+  buttonName,
+  menuName,
+}: {
+  accountBar: ReactNode;
+  buttonName: ReactNode;
+  menuName: ReactNode;
+}) {
+  return <HeaderFrame pathname={usePathname()} accountBar={accountBar} buttonName={buttonName} menuName={menuName} />;
 }
 
 function HeaderFrame({
   pathname,
+  accountBar,
   buttonName,
   menuName,
 }: {
   pathname: string | null;
+  accountBar: ReactNode;
   buttonName: ReactNode;
   menuName: ReactNode;
 }) {
@@ -61,7 +70,7 @@ function HeaderFrame({
           })}
         </nav>
         <div className="ml-auto">
-          <AccountBar buttonName={buttonName} menuName={menuName} />
+          {accountBar}
         </div>
       </div>
     </header>

@@ -20,6 +20,10 @@ export function SongPanel({
   songs,
   publication,
   rehearsal: initialRehearsal,
+  canEdit = true,
+  canPlay = true,
+  canOpen = true,
+  canStage = true,
 }: {
   showId: string;
   title: string;
@@ -27,6 +31,10 @@ export function SongPanel({
   songs: Song[];
   publication: PublishedShow | null;
   rehearsal: boolean;
+  canEdit?: boolean;
+  canPlay?: boolean;
+  canOpen?: boolean;
+  canStage?: boolean;
 }) {
   const history = useSetlistHistory();
   const router = useRouter();
@@ -120,6 +128,8 @@ export function SongPanel({
           onDraft={keepSong}
           mode={rehearsal}
           onMode={chooseMode}
+          canEdit={canEdit}
+          canStage={canStage}
         />
       </section>
     );
@@ -139,11 +149,11 @@ export function SongPanel({
             type="button"
             disabled={publishing || inSync}
             onClick={() => void publish()}
-            className="mr-3 h-8 rounded-full bg-primary px-3 text-[13px] font-semibold text-white outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover disabled:bg-surface-elevated disabled:text-muted disabled:hover:bg-surface-elevated"
+            className={`mr-3 h-8 rounded-full bg-primary px-3 text-[13px] font-semibold text-white outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover disabled:bg-surface-elevated disabled:text-muted disabled:hover:bg-surface-elevated ${canEdit ? "" : "hidden"}`}
           >
             {publishing ? "Publishing" : inSync ? "Published" : "Publish"}
           </button>
-          <div className="mr-2 flex items-center gap-1">
+          <div className={`mr-2 flex items-center gap-1 ${canPlay ? "" : "hidden"}`}>
             <button
               type="button"
               aria-label={playback.setPlaying ? "Pause" : "Play"}
@@ -163,22 +173,26 @@ export function SongPanel({
               <StopIcon />
             </button>
           </div>
-          <HeaderButton label="Undo" disabled={!history.canUndo} onClick={() => void history.undo()}>
-            <UndoIcon />
-          </HeaderButton>
-          <HeaderButton label="Redo" disabled={!history.canRedo} onClick={() => void history.redo()}>
-            <RedoIcon />
-          </HeaderButton>
-          <RowMenu
-            label={`${title} actions`}
-            items={[
-              { label: "Download", disabled: published === null, onSelect: () => downloadPublished(showId) },
-              { label: "Delete", onSelect: () => void history.removeShow(showId, true) },
-            ]}
-          />
+          {canEdit ? (
+            <>
+              <HeaderButton label="Undo" disabled={!history.canUndo} onClick={() => void history.undo()}>
+                <UndoIcon />
+              </HeaderButton>
+              <HeaderButton label="Redo" disabled={!history.canRedo} onClick={() => void history.redo()}>
+                <RedoIcon />
+              </HeaderButton>
+              <RowMenu
+                label={`${title} actions`}
+                items={[
+                  { label: "Download", disabled: published === null, onSelect: () => downloadPublished(showId) },
+                  { label: "Delete", onSelect: () => void history.removeShow(showId, true) },
+                ]}
+              />
+            </>
+          ) : null}
         </div>
       </div>
-      <SongList showId={showId} songs={library} onArrange={showSong} onEdited={keepSong} playback={playback} />
+      <SongList showId={showId} songs={library} onArrange={showSong} onEdited={keepSong} playback={playback} canEdit={canEdit} canPlay={canPlay} canOpen={canOpen} />
     </section>
   );
 }

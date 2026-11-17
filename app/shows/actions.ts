@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { denied } from "../auth/access";
 import { getSql } from "../db";
 import { storedMix } from "./mix";
 import { storedStage, storedTempo } from "./stage";
@@ -12,6 +13,8 @@ import { ownedAudioKey, signAudioRead, signAudioUpload } from "./storage";
 import type { FormState, PublishedShow, ShowSnapshot, Song, SongCue, SongMix, SongSection, SongStage } from "./types";
 
 export async function createShow(_state: FormState, formData: FormData): Promise<FormState> {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   const title = String(formData.get("title") ?? "").trim();
   const performedOn = String(formData.get("performedOn") ?? "").trim();
   if (!title) return { error: "Enter a show name." };
@@ -40,6 +43,8 @@ export async function createShow(_state: FormState, formData: FormData): Promise
 }
 
 export async function updateShow(showId: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   const title = String(formData.get("title") ?? "").trim();
   const performedOn = String(formData.get("performedOn") ?? "").trim();
   if (!title) return { error: "Enter a show name." };
@@ -50,6 +55,8 @@ export async function updateShow(showId: string, _state: FormState, formData: Fo
 }
 
 export async function replaceShowDetails(show: { id: string; title: string; performedOn: string }) {
+  const block = await denied("prepare");
+  if (block) return null;
   return writeShow(show.id, show.title, show.performedOn);
 }
 
@@ -67,6 +74,8 @@ async function writeShow(showId: string, title: string, performedOn: string) {
 }
 
 export async function createSong(showId: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   const title = String(formData.get("title") ?? "").trim();
   const key = String(formData.get("key") ?? "").trim();
   const lyrics = String(formData.get("lyrics") ?? "");
@@ -127,6 +136,8 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
 }
 
 export async function updateSong(showId: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   const songId = String(formData.get("songId") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const key = String(formData.get("key") ?? "").trim();
@@ -166,6 +177,8 @@ export async function replaceSongDetails(
   showId: string,
   song: Pick<Song, "id" | "title" | "tempo" | "key" | "lyrics" | "stemKey" | "guideKey" | "trackKeys">,
 ) {
+  const block = await denied("prepare");
+  if (block) return null;
   return writeSongDetails(showId, song.id, {
     title: song.title,
     tempo: song.tempo,
@@ -227,6 +240,7 @@ function trackChoice(showId: string, uploaded: FormDataEntryValue | null, curren
 }
 
 export async function restoreSong(showId: string, song: Song) {
+  if (await denied("prepare")) return;
   const sql = getSql();
   const position = Number.isInteger(song.position) ? song.position : 0;
   await sql`
@@ -263,6 +277,8 @@ export async function restoreSong(showId: string, song: Song) {
 }
 
 export async function orderSongs(showId: string, ids: string[]) {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   const sql = getSql();
   const rows = await sql`select id from songs where show_id = ${showId}`;
   const owned = rows.map((row) => String(row.id));
@@ -277,6 +293,8 @@ export async function orderSongs(showId: string, ids: string[]) {
 }
 
 export async function signUpload(input: { showId: string; fileName: string; contentType: string; size: number }) {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   return signAudioUpload(input.showId, input.fileName, input.contentType, Number(input.size));
 }
 
@@ -285,6 +303,8 @@ export async function readAudio(showId: string, key: string) {
 }
 
 export async function saveStemLayers(showId: string, songId: string, trackKeys: string[], guideKey: string | null) {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   if (trackKeys.length > 16) return { error: "That arrangement is too long." };
   const tracks: string[] = [];
   for (const key of trackKeys) {
@@ -316,6 +336,8 @@ export async function saveArrangement(
   slipBars: number,
   lyrics: string,
 ) {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   const cleanSections = parseSections(sections);
   const cleanCues = parseCues(cues);
   if (!cleanSections.length || cleanSections.length !== sections.length || cleanCues.length !== cues.length) {
@@ -343,6 +365,8 @@ export async function saveArrangement(
 }
 
 export async function saveStage(showId: string, songId: string, tempo: number, stage: SongStage) {
+  const block = await denied("stage");
+  if (block) return { error: block };
   const cleanTempo = storedTempo(tempo);
   const clean = storedStage(stage);
   const sql = getSql();
@@ -359,6 +383,8 @@ export async function saveStage(showId: string, songId: string, tempo: number, s
 }
 
 export async function saveMix(showId: string, songId: string, mix: SongMix) {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   const clean = storedMix(mix);
   const sql = getSql();
   const rows = await sql`
@@ -373,6 +399,8 @@ export async function saveMix(showId: string, songId: string, mix: SongMix) {
 }
 
 export async function publishShow(showId: string): Promise<{ error: string | null; publication?: PublishedShow }> {
+  const block = await denied("prepare");
+  if (block) return { error: block };
   const sql = getSql();
   const shows = await sql`
     select id, title, performed_on::text as "performedOn"
@@ -408,6 +436,7 @@ export async function publishShow(showId: string): Promise<{ error: string | nul
 }
 
 export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
+  if (await denied("prepare")) return null;
   const sql = getSql();
   const shows = await sql`
     select id, title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as "publishedSnapshot"
@@ -457,6 +486,7 @@ export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
 }
 
 export async function restoreShow(show: ShowSnapshot) {
+  if (await denied("prepare")) return;
   const sql = getSql();
   const snapshot = show.publishedSongs ? JSON.stringify({ songs: show.publishedSongs }) : null;
   await sql`
@@ -501,6 +531,7 @@ export async function restoreShow(show: ShowSnapshot) {
 }
 
 export async function deleteSong(songId: string) {
+  if (await denied("prepare")) return;
   const sql = getSql();
   await sql`delete from songs where id = ${songId}`;
   revalidatePath("/", "layout");

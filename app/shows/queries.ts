@@ -1,3 +1,4 @@
+import { readSessionAccount } from "../auth/queries";
 import { getSql } from "../db";
 import { organizationId } from "../organization/queries";
 import { storedMix } from "./mix";
@@ -8,18 +9,35 @@ import type { PublishedShow, Show, Song } from "./types";
 
 export async function listShows(): Promise<Show[]> {
   const sql = getSql();
-  const rows = await sql`
-    select
-      shows.id,
-      shows.title,
-      shows.performed_on as "performedOn",
-      shows.published_at is not null as published,
-      count(songs.id)::int as "songCount"
-    from shows
-    left join songs on songs.show_id = shows.id
-    group by shows.id
-    order by shows.performed_on desc, shows.created_at desc
-  `;
+  const account = await readSessionAccount();
+  const orgId = account ? await organizationId() : null;
+  if (account && !orgId) return [];
+  const rows = account
+    ? await sql`
+        select
+          shows.id,
+          shows.title,
+          shows.performed_on as "performedOn",
+          shows.published_at is not null as published,
+          count(songs.id)::int as "songCount"
+        from shows
+        left join songs on songs.show_id = shows.id
+        where shows.organization_id is null or shows.organization_id = ${orgId}
+        group by shows.id
+        order by shows.performed_on desc, shows.created_at desc
+      `
+    : await sql`
+        select
+          shows.id,
+          shows.title,
+          shows.performed_on as "performedOn",
+          shows.published_at is not null as published,
+          count(songs.id)::int as "songCount"
+        from shows
+        left join songs on songs.show_id = shows.id
+        group by shows.id
+        order by shows.performed_on desc, shows.created_at desc
+      `;
   return rows.map((row) => ({
     id: String(row.id),
     title: String(row.title),

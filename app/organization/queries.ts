@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { ensureAuthTables, readSessionAccount } from "../auth/queries";
 import { getSql } from "../db";
 
 export type SeatRecord = {
@@ -7,6 +8,7 @@ export type SeatRecord = {
   email: string | null;
   role: string;
   invited: boolean;
+  accountId: string | null;
 };
 
 export type OrganizationRecord = {
@@ -60,6 +62,7 @@ async function migrate() {
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
     if (code !== "23505") throw error;
   }
+  await ensureAuthTables();
 }
 
 export async function organizationId() {
@@ -69,18 +72,28 @@ export async function organizationId() {
 
 export const readOrganization = cache(async (): Promise<OrganizationRecord | null> => {
   await ensureOrganizationTables();
+  const account = await readSessionAccount();
   const sql = getSql();
-  const rows = await sql`
-    select id, name
-    from organizations
-    order by created_at asc
-    limit 1
-  `;
+  const rows = account
+    ? await sql`
+        select organizations.id, organizations.name
+        from seats
+        join organizations on organizations.id = seats.organization_id
+        where seats.account_id = ${account.id}
+        order by seats.created_at asc
+        limit 1
+      `
+    : await sql`
+        select id, name
+        from organizations
+        order by created_at asc
+        limit 1
+      `;
   const row = rows[0];
   if (!row) return null;
   const id = String(row.id);
   const seats = await sql`
-    select id, name, email, role, invited_at
+    select id, name, email, role, invited_at, accepted_at, account_id
     from seats
     where organization_id = ${id}
     order by created_at asc
@@ -93,7 +106,8 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
       name: String(seat.name),
       email: seat.email ? String(seat.email) : null,
       role: String(seat.role ?? "Owner"),
-      invited: seat.invited_at != null,
+      invited: seat.invited_at != null && seat.accepted_at == null,
+      accountId: seat.account_id ? String(seat.account_id) : null,
     })),
   };
 });
