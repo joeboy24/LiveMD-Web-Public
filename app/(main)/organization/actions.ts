@@ -1,12 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { denied } from "../../auth/access";
 import { appOrigin, mailConfigured, sendInvitation } from "../../auth/mail";
 import { createSignInLink, dropSignInLink, readSessionAccount } from "../../auth/queries";
 import { getSql } from "../../db";
 import { readOrganization } from "./queries";
-import { roles } from "./sample";
+import { roles, seatLimit } from "./sample";
 
 export type OrganizationState = {
   error: string | null;
@@ -77,6 +78,7 @@ export async function addSeat(_state: OrganizationState, formData: FormData): Pr
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
   if (organization.seats.some((seat) => seat.email === email)) return { error: "That email already has a seat." };
+  if (organization.seats.length >= seatLimit(organization.plan)) redirect("/organization/plan");
   const sql = getSql();
   await sql`
     insert into seats (organization_id, name, email, role, invited_at)

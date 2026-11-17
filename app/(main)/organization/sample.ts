@@ -20,13 +20,13 @@ export const roles = [
   },
   {
     name: "Musician",
-    detail: "Opens the chart and hears the layers for their part.",
-    audio: "The layers for their part",
+    detail: "Prepares the show. This seat can't publish.",
+    audio: "Every layer",
     color: "#FA8E23",
   },
   {
     name: "Playback operator",
-    detail: "Runs transport and the stage outputs.",
+    detail: "Plays the published show on the iPad. This seat doesn't use the website.",
     audio: "Click, stems, and guide",
     color: "#665A9C",
   },
@@ -52,3 +52,7 @@ export const plans = [
     sample: false,
   },
 ] as const;
+
+export function seatLimit(plan: string) {
+  return plans.find((item) => item.name === plan)?.seats ?? 1;
+}

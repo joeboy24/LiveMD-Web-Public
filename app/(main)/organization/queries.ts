@@ -14,6 +14,7 @@ export type SeatRecord = {
 export type OrganizationRecord = {
   id: string;
   name: string;
+  plan: string;
   seats: SeatRecord[];
 };
 
@@ -33,9 +34,11 @@ async function migrate() {
     create table if not exists organizations (
       id uuid primary key default gen_random_uuid(),
       name text not null,
+      plan text not null default 'Personal',
       created_at timestamptz not null default now()
     )
   `;
+  await sql`alter table organizations add column if not exists plan text not null default 'Personal'`;
   await sql`
     create table if not exists seats (
       id uuid primary key default gen_random_uuid(),
@@ -76,7 +79,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
   const sql = getSql();
   const rows = account
     ? await sql`
-        select organizations.id, organizations.name
+        select organizations.id, organizations.name, organizations.plan
         from seats
         join organizations on organizations.id = seats.organization_id
         where seats.account_id = ${account.id}
@@ -84,7 +87,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
         limit 1
       `
     : await sql`
-        select id, name
+        select id, name, plan
         from organizations
         order by created_at asc
         limit 1
@@ -101,6 +104,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
   return {
     id,
     name: String(row.name),
+    plan: String(row.plan ?? "Personal"),
     seats: seats.map((seat) => ({
       id: String(seat.id),
       name: String(seat.name),

@@ -399,7 +399,7 @@ export async function saveMix(showId: string, songId: string, mix: SongMix) {
 }
 
 export async function publishShow(showId: string): Promise<{ error: string | null; publication?: PublishedShow }> {
-  const block = await denied("prepare");
+  const block = await denied("publish");
   if (block) return { error: block };
   const sql = getSql();
   const shows = await sql`

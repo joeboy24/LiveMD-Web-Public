@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { FiMail } from "react-icons/fi";
 import { Field } from "../../components/field";
@@ -22,7 +22,7 @@ type SeatRecord = {
 
 const initial: OrganizationState = { error: null };
 
-export function SeatBoard({ seats }: { seats: SeatRecord[] }) {
+export function SeatBoard({ seats, seatAllowance }: { seats: SeatRecord[]; seatAllowance: number }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -49,19 +49,29 @@ export function SeatBoard({ seats }: { seats: SeatRecord[] }) {
   }, initial);
 
   const count = seats.length === 1 ? "1 seat" : `${seats.length} seats`;
+  const full = seats.length >= seatAllowance;
   const ready = name.trim().length > 0 && email.trim().length > 0 && role.length > 0;
+  const allowanceLabel = seatAllowance === 1 ? "1 seat" : `${seatAllowance} seats`;
+
+  function attemptAdd(event: FormEvent<HTMLFormElement>) {
+    if (!full) return;
+    event.preventDefault();
+    router.push("/organization/plan");
+  }
+
   return (
     <div>
       {notice ? <Toast key={notice.id} message={notice.text} tone={notice.tone} onDone={() => setNotice(null)} /> : null}
-      <form action={action} className="rounded-2xl bg-surface p-5">
+      <form action={action} onSubmit={attemptAdd} className="rounded-2xl bg-surface p-5">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Name" name="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" />
           <Field label="Email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" />
         </div>
         <RoleField className="mt-3" value={role} onChange={setRole} />
         {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
-        <SaveButton icon={FiMail} pending={pending} pendingLabel="Inviting" disabled={pending || !ready} className="mt-4">
-          Invite
+        <p className="mt-4 text-[13px] text-muted">This plan includes {allowanceLabel}.</p>
+        <SaveButton icon={FiMail} pending={pending} pendingLabel="Inviting" disabled={pending || (!full && !ready)} className="mt-4">
+          {full ? "Choose a plan" : "Invite"}
         </SaveButton>
       </form>
       <p className="mt-5 text-[13px] font-semibold text-muted">{count}</p>

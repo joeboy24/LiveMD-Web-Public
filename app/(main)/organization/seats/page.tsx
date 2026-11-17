@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ListRow } from "../../../components/list-row";
 import { Monogram, PageIntro, SampleMark } from "../chrome";
-import { sampleSeats } from "../sample";
+import { sampleSeats, seatLimit } from "../sample";
 import { SeatBoard } from "../seat-board";
 import { readOrganization } from "../queries";
 
@@ -48,7 +48,7 @@ async function SeatsBody() {
         title="Seats"
         detail={`${organization.name}. Invite someone with a name, an email, and a role. They take the seat when they accept.`}
       />
-      <SeatBoard seats={organization.seats} />
+      <SeatBoard seats={organization.seats} seatAllowance={seatLimit(organization.plan)} />
     </div>
   );
 }

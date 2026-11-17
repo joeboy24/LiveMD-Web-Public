@@ -49,6 +49,7 @@ async function ShowsWorkspace({ searchParams }: { searchParams: Promise<{ show?:
       canPlay={access.transport}
       canOpen={access.chart}
       canStage={access.stage}
+      canPublish={access.publish}
     />
   );
 }

@@ -11,6 +11,8 @@ export type SeatAccess = {
   transport: boolean;
   stage: boolean;
   organize: boolean;
+  publish: boolean;
+  web: boolean;
   layers: readonly AudioLayer[];
 };
 
@@ -18,18 +20,18 @@ const everyLayer = ["stem", "guide", "track"] as const;
 
 export function accessFor(role: string | null, signedIn = false): SeatAccess {
   if (role === "Musician") {
-    return { role, prepare: false, chart: true, transport: false, stage: false, organize: false, layers: ["track"] };
+    return { role, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: false, web: true, layers: everyLayer };
   }
   if (role === "Playback operator") {
-    return { role, prepare: false, chart: true, transport: true, stage: true, organize: false, layers: ["stem", "guide"] };
+    return { role, prepare: false, chart: false, transport: false, stage: false, organize: false, publish: false, web: false, layers: ["stem", "guide"] };
   }
   if (role === "Owner" || role === "Music director") {
-    return { role, prepare: true, chart: true, transport: true, stage: true, organize: true, layers: everyLayer };
+    return { role, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: true, web: true, layers: everyLayer };
   }
   if (signedIn) {
-    return { role: null, prepare: false, chart: false, transport: false, stage: false, organize: true, layers: [] };
+    return { role: null, prepare: false, chart: false, transport: false, stage: false, organize: true, publish: false, web: true, layers: [] };
   }
-  return { role: null, prepare: true, chart: true, transport: true, stage: true, organize: true, layers: everyLayer };
+  return { role: null, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: true, web: true, layers: everyLayer };
 }
 
 export function keepsAudio(
@@ -54,8 +56,9 @@ export const readAccess = cache(async (): Promise<SeatAccess> => {
   return accessFor(seat?.role ?? null, true);
 });
 
-export async function denied(kind: "prepare" | "stage" | "organize") {
+export async function denied(kind: "prepare" | "stage" | "organize" | "publish") {
   const access = await readAccess();
-  const allowed = kind === "prepare" ? access.prepare : kind === "stage" ? access.prepare || access.stage : access.organize;
+  const allowed =
+    kind === "prepare" ? access.prepare : kind === "stage" ? access.prepare || access.stage : kind === "publish" ? access.publish : access.organize;
   return allowed ? null : "This seat can't change that.";
 }

@@ -24,6 +24,7 @@ export function SongPanel({
   canPlay = true,
   canOpen = true,
   canStage = true,
+  canPublish = true,
 }: {
   showId: string;
   title: string;
@@ -35,6 +36,7 @@ export function SongPanel({
   canPlay?: boolean;
   canOpen?: boolean;
   canStage?: boolean;
+  canPublish?: boolean;
 }) {
   const history = useSetlistHistory();
   const router = useRouter();
@@ -75,6 +77,7 @@ export function SongPanel({
   }
 
   async function publish() {
+    if (!canPublish) return;
     setPublishing(true);
     setPublishError(null);
     try {
@@ -149,7 +152,7 @@ export function SongPanel({
             type="button"
             disabled={publishing || inSync}
             onClick={() => void publish()}
-            className={`mr-3 h-8 rounded-full bg-primary px-3 text-[13px] font-semibold text-white outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover disabled:bg-surface-elevated disabled:text-muted disabled:hover:bg-surface-elevated ${canEdit ? "" : "hidden"}`}
+            className={`mr-3 h-8 rounded-full bg-primary px-3 text-[13px] font-semibold text-white outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover disabled:bg-surface-elevated disabled:text-muted disabled:hover:bg-surface-elevated ${canPublish ? "" : "hidden"}`}
           >
             {publishing ? "Publishing" : inSync ? "Published" : "Publish"}
           </button>

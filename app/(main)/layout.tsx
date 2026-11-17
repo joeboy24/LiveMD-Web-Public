@@ -1,5 +1,6 @@
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { redirect } from "next/navigation";
+import { readAccess } from "../auth/access";
 import { readSessionAccount } from "../auth/queries";
 import { AccountBar } from "../components/account-bar";
 import { CurrentAccount } from "../components/current-account";
@@ -11,10 +12,19 @@ import { ShowSidebar } from "../shows/show-sidebar";
 
 export default function MainLayout({ children }: LayoutProps<"/">) {
   return (
+    <Suspense fallback={<p className="px-6 py-8 text-base text-muted">Loading.</p>}>
+      <MainShell>{children}</MainShell>
+    </Suspense>
+  );
+}
+
+async function MainShell({ children }: { children: ReactNode }) {
+  const account = await readSessionAccount();
+  if (!account) redirect("/sign-in");
+  const access = await readAccess();
+  if (!access.web) return <PlayerSeat />;
+  return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Suspense fallback={null}>
-        <RequireAccount />
-      </Suspense>
       <SiteHeader
         buttonName={<OrganizationLabel />}
         menuName={<OrganizationLabel />}
@@ -40,8 +50,24 @@ export default function MainLayout({ children }: LayoutProps<"/">) {
   );
 }
 
-async function RequireAccount() {
-  const account = await readSessionAccount();
-  if (!account) redirect("/sign-in");
-  return null;
+function PlayerSeat() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex items-center justify-between border-b border-surface-elevated bg-surface px-4 py-3.5">
+        <span className="text-lg font-bold tracking-tight text-ink">
+          Live<span className="pl-0.5 text-primary-hover">MD</span>
+        </span>
+        <Suspense fallback={<AccountBar account={null} buttonName={<OrganizationLabel />} menuName={<OrganizationLabel />} />}>
+          <CurrentAccount buttonName={<OrganizationLabel />} menuName={<OrganizationLabel />} />
+        </Suspense>
+      </header>
+      <main className="flex flex-1 items-center justify-center px-6">
+        <div className="max-w-md text-center">
+          <p className="text-[11px] font-semibold tracking-[0.16em] text-muted">YOUR SEAT</p>
+          <h1 className="mt-2 text-[32px] leading-none font-bold tracking-tight text-ink">Playback operator</h1>
+          <p className="mt-3 text-[15px] leading-6 text-muted">This seat plays the published show on the iPad. It doesn't use the website.</p>
+        </div>
+      </main>
+    </div>
+  );
 }
