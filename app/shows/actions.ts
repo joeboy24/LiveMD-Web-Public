@@ -5,7 +5,7 @@ import { denied } from "../auth/access";
 import { getSql } from "../db";
 import { storedMix } from "./mix";
 import { storedStage, storedTempo } from "./stage";
-import { organizationId } from "../organization/queries";
+import { organizationId } from "../(main)/organization/queries";
 import { listSongs } from "./queries";
 import { publishableSongs, publishedShow, snapshotSongs } from "./publication";
 import { parseCues, parseSections } from "./structure";

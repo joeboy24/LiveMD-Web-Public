@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { songCountLabel } from "../shows/format";
-import { listShows } from "../shows/queries";
+import { songCountLabel } from "../../shows/format";
+import { listShows } from "../../shows/queries";
 import { AreaLinks, PageIntro, Stat } from "./chrome";
-import { readSessionAccount } from "../auth/queries";
+import { readSessionAccount } from "../../auth/queries";
 import { OrganizationForm } from "./organization-form";
 import { readOrganization } from "./queries";
 

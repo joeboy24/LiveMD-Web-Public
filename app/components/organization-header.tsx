@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { readOrganization } from "../organization/queries";
+import { readOrganization } from "../(main)/organization/queries";
 
 export function OrganizationLabel() {
   return (

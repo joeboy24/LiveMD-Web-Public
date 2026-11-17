@@ -1,12 +1,12 @@
 import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { EmptyLabel } from "./components/empty-label";
-import { readAccess } from "./auth/access";
-import { listShows, listSongs, showPublication } from "./shows/queries";
-import { HistoryButtons } from "./shows/history";
-import { PERFORMANCE_MODE_KEY, performanceModeFrom } from "./shows/performance-mode";
-import { SongPanel } from "./shows/song-panel";
+import { EmptyLabel } from "../components/empty-label";
+import { readAccess } from "../auth/access";
+import { listShows, listSongs, showPublication } from "../shows/queries";
+import { HistoryButtons } from "../shows/history";
+import { PERFORMANCE_MODE_KEY, performanceModeFrom } from "../shows/performance-mode";
+import { SongPanel } from "../shows/song-panel";
 
 export default function Home({ searchParams }: { searchParams: Promise<{ show?: string | string[] }> }) {
   return (

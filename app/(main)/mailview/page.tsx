@@ -1,8 +1,8 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { invitationLetter, signInLetter, type Letter } from "../auth/letter";
-import { readTheme, THEME_EVENT, type Theme } from "../theme";
+import { invitationLetter, signInLetter, type Letter } from "../../auth/letter";
+import { readTheme, THEME_EVENT, type Theme } from "../../theme";
 
 const previewUrl = "http://localhost:3000/sign-in/verify?token=preview";
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Field } from "../components/field";
-import { SaveButton } from "../components/save-button";
+import { Field } from "../../components/field";
+import { SaveButton } from "../../components/save-button";
 import { createOrganization, renameOrganization, type OrganizationState } from "./actions";
 
 const initial: OrganizationState = { error: null };

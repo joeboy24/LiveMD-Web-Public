@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { denied } from "../auth/access";
-import { appOrigin, mailConfigured, sendInvitation } from "../auth/mail";
-import { createSignInLink, dropSignInLink, readSessionAccount } from "../auth/queries";
-import { getSql } from "../db";
+import { denied } from "../../auth/access";
+import { appOrigin, mailConfigured, sendInvitation } from "../../auth/mail";
+import { createSignInLink, dropSignInLink, readSessionAccount } from "../../auth/queries";
+import { getSql } from "../../db";
 import { readOrganization } from "./queries";
 import { roles } from "./sample";
 

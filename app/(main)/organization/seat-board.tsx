@@ -3,11 +3,11 @@
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiMail } from "react-icons/fi";
-import { Field } from "../components/field";
-import { ListRow } from "../components/list-row";
-import { SaveButton } from "../components/save-button";
-import { Toast, type ToastTone } from "../components/toast";
-import { RowMenu } from "../components/row-menu";
+import { Field } from "../../components/field";
+import { ListRow } from "../../components/list-row";
+import { SaveButton } from "../../components/save-button";
+import { Toast, type ToastTone } from "../../components/toast";
+import { RowMenu } from "../../components/row-menu";
 import { Monogram } from "./chrome";
 import { roles } from "./sample";
 import { addSeat, reinviteSeat, removeSeat, renameSeat, type OrganizationState } from "./actions";

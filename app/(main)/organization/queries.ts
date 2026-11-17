@@ -1,6 +1,6 @@
 import { cache } from "react";
-import { ensureAuthTables, readSessionAccount } from "../auth/queries";
-import { getSql } from "../db";
+import { ensureAuthTables, readSessionAccount } from "../../auth/queries";
+import { getSql } from "../../db";
 
 export type SeatRecord = {
   id: string;

@@ -1,9 +1,10 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { applyTheme, readTheme, THEME_EVENT, type Theme } from "../theme";
+import { applyTheme, readThemePreference, THEME_EVENT, type ThemePreference } from "../theme";
 
-const options: { value: Theme; label: string }[] = [
+const options: { value: ThemePreference; label: string }[] = [
+  { value: "system", label: "System" },
   { value: "dark", label: "Dark" },
   { value: "light", label: "Light" },
 ];
@@ -14,23 +15,21 @@ function subscribe(onChange: () => void) {
 }
 
 export function ThemeSwitch() {
-  const theme = useSyncExternalStore(subscribe, readTheme, () => "dark" as const);
+  const preference = useSyncExternalStore(subscribe, readThemePreference, () => "system" as const);
 
   return (
     <div className="flex rounded-[9px] bg-background p-0.5" role="group" aria-label="Appearance">
       {options.map((option) => {
-        const selected = theme === option.value;
+        const selected = preference === option.value;
         return (
           <button
             key={option.value}
             type="button"
             aria-pressed={selected}
             onClick={() => applyTheme(option.value)}
-            className={
-              option.value === "dark"
-                ? "rounded-[7px] px-3 py-1.5 text-[13px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover in-data-[theme=dark]:bg-primary in-data-[theme=dark]:text-white in-data-[theme=dark]:hover:text-white [:root:not([data-theme])_&]:bg-primary [:root:not([data-theme])_&]:text-white"
-                : "rounded-[7px] px-3 py-1.5 text-[13px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover in-data-[theme=light]:bg-primary in-data-[theme=light]:text-white in-data-[theme=light]:hover:text-white"
-            }
+            className={`flex-1 rounded-[7px] px-2 py-1.5 text-[13px] font-semibold whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${
+              selected ? "bg-primary text-white" : "text-muted hover:text-ink"
+            }`}
           >
             {option.label}
           </button>

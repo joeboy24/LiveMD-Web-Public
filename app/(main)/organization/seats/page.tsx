@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { ListRow } from "../../components/list-row";
+import { ListRow } from "../../../components/list-row";
 import { Monogram, PageIntro, SampleMark } from "../chrome";
 import { sampleSeats } from "../sample";
 import { SeatBoard } from "../seat-board";

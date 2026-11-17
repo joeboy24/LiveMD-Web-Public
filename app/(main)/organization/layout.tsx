@@ -1,5 +1,5 @@
 import { Suspense, type ReactNode } from "react";
-import { readAccess } from "../auth/access";
+import { readAccess } from "../../auth/access";
 import { OrganizationNav } from "./nav";
 import { YourSeat } from "./your-seat";
 

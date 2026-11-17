@@ -20,6 +20,7 @@ create table if not exists accounts (
   id uuid primary key default gen_random_uuid(),
   email text not null,
   name text,
+  password_hash text,
   created_at timestamptz not null default now()
 );
 

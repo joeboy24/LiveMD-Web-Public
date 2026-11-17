@@ -1,5 +1,5 @@
-import { readAccess } from "../auth/access";
-import { readSessionAccount } from "../auth/queries";
+import { readAccess } from "../../auth/access";
+import { readSessionAccount } from "../../auth/queries";
 import { PageIntro } from "./chrome";
 import { readOrganization } from "./queries";
 import { roles } from "./sample";

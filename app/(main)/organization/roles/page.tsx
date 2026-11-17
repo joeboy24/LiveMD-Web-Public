@@ -1,4 +1,4 @@
-import { ListRow } from "../../components/list-row";
+import { ListRow } from "../../../components/list-row";
 import { Monogram, PageIntro, SampleMark } from "../chrome";
 import { roles, sampleSeats } from "../sample";
 

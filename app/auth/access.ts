@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { readOrganization } from "../organization/queries";
+import { readOrganization } from "../(main)/organization/queries";
 import { readSessionAccount } from "./queries";
 
 export type AudioLayer = "stem" | "guide" | "track";

@@ -1,6 +1,6 @@
 import { readSessionAccount } from "../auth/queries";
 import { getSql } from "../db";
-import { organizationId } from "../organization/queries";
+import { organizationId } from "../(main)/organization/queries";
 import { storedMix } from "./mix";
 import { storedStage } from "./stage";
 import { offlinePackage, publishedShow, snapshotSongs } from "./publication";

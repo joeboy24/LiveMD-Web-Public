@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from "crypto";
 import { cache } from "react";
 import { cookies } from "next/headers";
+import { sessionCookieName } from "./cookie";
 import { getSql } from "../db";
 
-const cookieName = "livemd_session";
+const cookieName = sessionCookieName;
 const linkMinutes = 15;
 const sessionDays = 30;
 
@@ -70,6 +71,7 @@ async function migrate() {
       created_at timestamptz not null default now()
     )
   `;
+  await sql`alter table accounts add column if not exists password_hash text`;
   await sql`alter table seats add column if not exists accepted_at timestamptz`;
   await sql`alter table seats add column if not exists account_id uuid references accounts (id)`;
 }
@@ -161,6 +163,55 @@ export async function consumeSignInLink(token: string) {
     await sql`update accounts set name = ${seatName} where id = ${accountId}`;
   }
 
+  await attachSeats(email, accountId);
+  return accountId;
+}
+
+export async function findAccountByEmail(email: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const rows = await sql`
+    select id, email, name, password_hash
+    from accounts
+    where lower(email) = ${email}
+    limit 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    email: String(row.email),
+    name: row.name ? String(row.name) : null,
+    passwordHash: row.password_hash ? String(row.password_hash) : null,
+  };
+}
+
+export async function createPasswordAccount(email: string, name: string, passwordHash: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const created = await sql`
+    insert into accounts (email, name, password_hash)
+    values (${email}, ${name}, ${passwordHash})
+    returning id
+  `;
+  const accountId = String(created[0].id);
+  await attachSeats(email, accountId);
+  return accountId;
+}
+
+export async function setAccountPassword(accountId: string, name: string, passwordHash: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  await sql`
+    update accounts
+    set password_hash = ${passwordHash},
+        name = coalesce(name, ${name})
+    where id = ${accountId}
+  `;
+}
+
+export async function attachSeats(email: string, accountId: string) {
+  const sql = getSql();
   await sql`
     update seats
     set account_id = ${accountId},
@@ -170,7 +221,6 @@ export async function consumeSignInLink(token: string) {
         end
     where lower(email) = ${email}
   `;
-  return accountId;
 }
 
 export async function openSession(accountId: string) {
