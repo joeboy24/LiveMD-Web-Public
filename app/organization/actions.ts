@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { denied } from "../auth/access";
-import { appOrigin, mailConfigured, sendMail } from "../auth/mail";
+import { appOrigin, mailConfigured, sendInvitation } from "../auth/mail";
 import { createSignInLink, dropSignInLink, readSessionAccount } from "../auth/queries";
 import { getSql } from "../db";
 import { readOrganization } from "./queries";
@@ -83,7 +83,7 @@ export async function addSeat(_state: OrganizationState, formData: FormData): Pr
     values (${organization.id}, ${name}, ${email}, ${role}, now())
   `;
   revalidatePath("/", "layout");
-  const mailed = await emailSeat(email, organization.name);
+  const mailed = await emailSeat(email, organization.name, role);
   return { error: mailed.error, sent: mailed.sent, saved: true };
 }
 
@@ -134,7 +134,7 @@ export async function reinviteSeat(seatId: string): Promise<OrganizationState> {
   if (!rows[0]) return { error: "That seat is missing." };
   revalidatePath("/", "layout");
   if (!seat.email) return { error: "Enter an email." };
-  const mailed = await emailSeat(seat.email, organization.name);
+  const mailed = await emailSeat(seat.email, organization.name, seat.role);
   return { error: mailed.error, sent: mailed.sent };
 }
 
@@ -175,15 +175,11 @@ function cleanRole(value: FormDataEntryValue | null) {
   return roleNames.has(role) ? role : "";
 }
 
-async function emailSeat(email: string, orgName: string) {
+async function emailSeat(email: string, orgName: string, role: string) {
   if (!mailConfigured()) return { error: null, sent: false };
   const token = await createSignInLink(email);
   const url = `${await appOrigin()}/sign-in/verify?token=${encodeURIComponent(token)}`;
-  const sent = await sendMail(
-    email,
-    `You're invited to ${orgName}`,
-    `You're invited to ${orgName} on Live MD.\n\nOpen this link to take your seat. It expires in 15 minutes.\n\n${url}`,
-  );
+  const sent = await sendInvitation(email, orgName, role, url);
   if (sent.error) {
     await dropSignInLink(token);
     return { error: "The email could not be sent.", sent: false };

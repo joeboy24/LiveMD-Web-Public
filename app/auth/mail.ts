@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { headers } from "next/headers";
+import { invitationLetter, signInLetter } from "./letter";
 
 export function mailConfigured() {
   return Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -19,7 +20,7 @@ export async function appOrigin() {
   return host ? `${proto}://${host}` : "http://localhost:3000";
 }
 
-export async function sendMail(to: string, subject: string, text: string) {
+export async function sendMail(to: string, subject: string, text: string, html: string) {
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
   if (!user || !pass) return { error: "Mail is not connected." };
@@ -32,13 +33,19 @@ export async function sendMail(to: string, subject: string, text: string) {
       secure: port === 465,
       auth: { user, pass },
     });
-    await transport.sendMail({ from, to, subject, text });
+    await transport.sendMail({ from, to, subject, text, html });
     return { error: null };
   } catch {
     return { error: "The email could not be sent." };
   }
 }
 
+export async function sendInvitation(email: string, orgName: string, role: string, url: string) {
+  const letter = invitationLetter(orgName, role, url);
+  return sendMail(email, letter.subject, letter.text, letter.html);
+}
+
 export async function sendSignInLink(email: string, url: string) {
-  return sendMail(email, "Sign in to Live MD", `Sign in to Live MD:\n\n${url}\n\nThis link expires in 15 minutes.`);
+  const letter = signInLetter(url);
+  return sendMail(email, letter.subject, letter.text, letter.html);
 }
