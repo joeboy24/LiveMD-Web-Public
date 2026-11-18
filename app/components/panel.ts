@@ -14,9 +14,10 @@ type PanelState = {
   groupId: string | null;
   group: string | null;
   recipients: MessageSeat[];
+  support: boolean;
 };
 
-const closed: PanelState = { feature: null, groupId: null, group: null, recipients: [] };
+const closed: PanelState = { feature: null, groupId: null, group: null, recipients: [], support: false };
 let state: PanelState = closed;
 const listeners = new Set<() => void>();
 
@@ -38,16 +39,31 @@ export function readPanelServer() {
 }
 
 export function chooseFeature(next: SideFeature) {
-  state = { ...state, feature: state.feature === next ? null : next };
+  const closing = state.feature === next;
+  state = {
+    ...state,
+    feature: closing ? null : next,
+    support: next === "message" ? false : state.support,
+  };
   emit();
 }
 
 export function openMessage(groupId: string, group: string, recipients: MessageSeat[]) {
-  if (state.feature === "message" && state.groupId === groupId) {
+  if (state.feature === "message" && state.groupId === groupId && !state.support) {
     state = { ...state, feature: null };
     emit();
     return;
   }
-  state = { feature: "message", groupId, group, recipients };
+  state = { feature: "message", groupId, group, recipients, support: false };
+  emit();
+}
+
+export function openSupport() {
+  if (state.feature === "message" && state.support) {
+    state = { ...state, feature: null, support: false };
+    emit();
+    return;
+  }
+  state = { feature: "message", groupId: "support", group: null, recipients: [], support: true };
   emit();
 }

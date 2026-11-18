@@ -7,7 +7,7 @@ import { getSql } from "../../db";
 import { notifySeats } from "./notify";
 import { readOrganization } from "./queries";
 
-export type MessageState = { error: string | null; sent: number; stamp: string };
+export type MessageState = { error: string | null; sent: number; stamp: string; support: boolean };
 
 export type SentMessage = {
   id: string;
@@ -76,17 +76,18 @@ export async function listSentMessages(page = 0): Promise<SentPage> {
 
 export async function sendGroupMessage(_state: MessageState, formData: FormData): Promise<MessageState> {
   const block = await denied("organize");
-  if (block) return { error: block, sent: 0, stamp: "" };
-  if (!mailConfigured()) return { error: "Mail is not connected.", sent: 0, stamp: "" };
+  if (block) return { error: block, sent: 0, stamp: "", support: false };
+  if (!mailConfigured()) return { error: "Mail is not connected.", sent: 0, stamp: "", support: false };
   const organization = await readOrganization();
-  if (!organization) return { error: "Name the organization first.", sent: 0, stamp: "" };
+  if (!organization) return { error: "Name the organization first.", sent: 0, stamp: "", support: false };
   const subject = clip(formData.get("subject"), 120);
   const body = clip(formData.get("body"), 2000);
-  if (!subject || !body) return { error: "Add a subject and a message.", sent: 0, stamp: "" };
+  if (!subject || !body) return { error: "Add a subject and a message.", sent: 0, stamp: "", support: false };
+  if (formData.get("support") === "1") return sendSupport(organization, subject, body);
   const chosen = new Set(formData.getAll("seat").map(String).filter((id) => idPattern.test(id)));
-  if (chosen.size === 0) return { error: "Choose at least one seat.", sent: 0, stamp: "" };
+  if (chosen.size === 0) return { error: "Choose at least one seat.", sent: 0, stamp: "", support: false };
   const targets = organization.seats.filter((seat) => chosen.has(seat.id) && seat.email);
-  if (targets.length === 0) return { error: "Choose a seat that has an email.", sent: 0, stamp: "" };
+  if (targets.length === 0) return { error: "Choose a seat that has an email.", sent: 0, stamp: "", support: false };
   const label = clip(formData.get("label"), 60) || "Seats";
   const letter = messageLetter(organization.name, label, subject, body);
   const sql = getSql();
@@ -95,7 +96,7 @@ export async function sendGroupMessage(_state: MessageState, formData: FormData)
     const result = await sendMail(String(seat.email), letter.subject, letter.text, letter.html);
     if (!result.error) delivered.push({ id: seat.id, name: String(seat.name) });
   }
-  if (delivered.length === 0) return { error: "The email could not be sent.", sent: 0, stamp: "" };
+  if (delivered.length === 0) return { error: "The email could not be sent.", sent: 0, stamp: "", support: false };
   await sql`
     insert into messages (organization_id, group_name, subject, body, recipients)
     values (${organization.id}, ${label}, ${subject}, ${body}, ${JSON.stringify(delivered.map((seat) => seat.name))}::jsonb)
@@ -109,7 +110,39 @@ export async function sendGroupMessage(_state: MessageState, formData: FormData)
       body,
     })),
   );
-  return { error: null, sent: delivered.length, stamp: crypto.randomUUID() };
+  return { error: null, sent: delivered.length, stamp: crypto.randomUUID(), support: false };
+}
+
+async function sendSupport(
+  organization: NonNullable<Awaited<ReturnType<typeof readOrganization>>>,
+  subject: string,
+  body: string,
+): Promise<MessageState> {
+  const admins = organization.seats.filter((seat) => seat.role === "Owner" || seat.role === "Music director");
+  const mailed = admins.filter((seat) => seat.email);
+  if (mailed.length === 0) return { error: "Support has no email yet.", sent: 0, stamp: "", support: true };
+  const letter = messageLetter(organization.name, "Support", subject, body);
+  const sql = getSql();
+  const delivered: { id: string; name: string }[] = [];
+  for (const seat of mailed) {
+    const result = await sendMail(String(seat.email), letter.subject, letter.text, letter.html);
+    if (!result.error) delivered.push({ id: seat.id, name: String(seat.name) });
+  }
+  if (delivered.length === 0) return { error: "The email could not be sent.", sent: 0, stamp: "", support: true };
+  await sql`
+    insert into messages (organization_id, group_name, subject, body, recipients)
+    values (${organization.id}, ${"Support"}, ${subject}, ${body}, ${JSON.stringify(delivered.map((seat) => seat.name))}::jsonb)
+  `;
+  await notifySeats(
+    admins.map((seat) => ({
+      organizationId: organization.id,
+      seatId: seat.id,
+      kind: "system" as const,
+      title: subject,
+      body,
+    })),
+  );
+  return { error: null, sent: delivered.length, stamp: crypto.randomUUID(), support: true };
 }
 
 function clip(value: unknown, max: number) {

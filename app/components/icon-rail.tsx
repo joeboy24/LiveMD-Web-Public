@@ -2,7 +2,6 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { FiBell, FiCheckSquare, FiHelpCircle, FiMessageSquare } from "react-icons/fi";
-import { LuSparkles } from "react-icons/lu";
 import type { IconType } from "react-icons";
 import { unreadNotifications } from "../(main)/organization/notification-actions";
 import { readNoticeCount, setNoticeCount, subscribeNoticeCount } from "./notice-count";
@@ -11,11 +10,10 @@ import type { SideFeature } from "./panel";
 export type { SideFeature };
 
 const tools: { id: SideFeature | null; label: string; help: string; icon: IconType; dot?: boolean }[] = [
-  { id: "help", label: "Help", help: "Open notes for the control under the pointer.", icon: FiHelpCircle },
   { id: "notifications", label: "Notifications", help: "Open alerts for your seat.", icon: FiBell, dot: true },
   { id: "tasks", label: "Tasks", help: "Open the to-do list.", icon: FiCheckSquare },
   { id: "message", label: "Chat", help: "Open a message and choose the seats that receive it.", icon: FiMessageSquare },
-  { id: null, label: "Sparkles", help: "Suggestions for the arrangement.", icon: LuSparkles },
+  { id: "help", label: "Help", help: "Open notes for the control under the pointer.", icon: FiHelpCircle },
 ];
 
 export function IconRail({ feature, onChoose }: { feature: SideFeature | null; onChoose: (feature: SideFeature) => void }) {

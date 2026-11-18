@@ -34,7 +34,7 @@ export function AccountBar({
 
   return (
     <div ref={barRef} className="relative flex items-center gap-2">
-      <div className="relative">
+      <div className="relative hidden md:block">
         <button
           type="button"
           aria-expanded={menu === "organization"}

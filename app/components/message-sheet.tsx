@@ -8,22 +8,24 @@ import type { MessageSeat } from "./panel";
 import { SaveButton } from "./save-button";
 import { Toast } from "./toast";
 
-const initial: MessageState = { error: null, sent: 0, stamp: "" };
+const initial: MessageState = { error: null, sent: 0, stamp: "", support: false };
 
 export function MessageSheet({
   groupId,
   group,
   recipients,
+  support,
 }: {
   groupId: string | null;
   group: string | null;
   recipients: MessageSeat[];
+  support: boolean;
 }) {
   const [refresh, setRefresh] = useState("");
   return (
     <div className="border-t border-surface-elevated px-3 py-3">
       <p className="shrink-0 text-[11px] font-semibold tracking-[0.16em] text-muted">MESSAGE</p>
-      <Composer key={groupId ?? "seats"} group={group} recipients={recipients} onSent={setRefresh} />
+      <Composer key={support ? "support" : (groupId ?? "seats")} group={group} recipients={recipients} support={support} onSent={setRefresh} />
       <SentList refresh={refresh} />
     </div>
   );
@@ -32,20 +34,22 @@ export function MessageSheet({
 function Composer({
   group,
   recipients,
+  support,
   onSent,
 }: {
   group: string | null;
   recipients: MessageSeat[];
+  support: boolean;
   onSent: (stamp: string) => void;
 }) {
   const [seats, setSeats] = useState<MailSeat[] | null>(null);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState(() => recipients.filter((seat) => seat.email).map((seat) => seat.id));
-  const [subject, setSubject] = useState("");
+  const [subject, setSubject] = useState(support ? "System Support" : "");
   const [body, setBody] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [state, action, pending] = useActionState(sendGroupMessage, initial);
-  const ready = subject.trim().length > 0 && body.trim().length > 0 && picked.length > 0;
+  const ready = subject.trim().length > 0 && body.trim().length > 0 && (support || picked.length > 0);
   const groupIds = recipients.filter((seat) => seat.email).map((seat) => seat.id);
   const sameGroup = Boolean(group) && sameIds(picked, groupIds);
   const needle = query.trim().toLowerCase();
@@ -56,6 +60,7 @@ function Composer({
   });
 
   useEffect(() => {
+    if (support) return;
     let live = true;
     listMessageSeats().then((rows) => {
       if (live) setSeats(rows);
@@ -63,38 +68,46 @@ function Composer({
     return () => {
       live = false;
     };
-  }, []);
+  }, [support]);
 
   useEffect(() => {
     if (!state.stamp) return;
-    setSubject("");
+    setSubject(support ? "System Support" : "");
     setBody("");
     setQuery("");
-    setNotice(state.sent === 1 ? "Sent to 1 seat." : `Sent to ${state.sent} seats.`);
+    setNotice(state.support ? "Sent to support." : state.sent === 1 ? "Sent to 1 seat." : `Sent to ${state.sent} seats.`);
     onSent(state.stamp);
-  }, [state.stamp, state.sent, onSent]);
+  }, [state.stamp, state.sent, state.support, support, onSent]);
 
   return (
     <form action={action} className="mt-3">
-      <input type="hidden" name="label" value={sameGroup && group ? group : "Seats"} />
-      {picked.map((id) => (
-        <input key={id} type="hidden" name="seat" value={id} />
-      ))}
+      <input type="hidden" name="label" value={support ? "Support" : sameGroup && group ? group : "Seats"} />
+      {support ? <input type="hidden" name="support" value="1" /> : null}
+      {support
+        ? null
+        : picked.map((id) => (
+            <input key={id} type="hidden" name="seat" value={id} />
+          ))}
       <div className="flex shrink-0 items-center justify-between gap-3">
         <p className="text-[11px] font-semibold tracking-[0.16em] text-muted">SEATS</p>
-        <button
-          type="button"
-          onClick={() => setPicked([])}
-          disabled={picked.length === 0}
-          data-help="Remove every seat from this message."
-          className="text-[12px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover disabled:opacity-40"
-        >
-          Clear
-        </button>
+        {support ? null : (
+          <button
+            type="button"
+            onClick={() => setPicked([])}
+            disabled={picked.length === 0}
+            data-help="Remove every seat from this message."
+            className="text-[12px] font-semibold text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-primary-hover disabled:opacity-40"
+          >
+            Clear
+          </button>
+        )}
       </div>
-      {group ? <p className="mt-2 shrink-0 text-[13px] font-semibold text-ink">{group}</p> : null}
-      {seats && seats.length === 0 ? <p className="mt-2 shrink-0 text-[13px] leading-5 text-muted">This organization has no seats yet.</p> : null}
-      {seats && seats.length > 0 ? (
+      {support ? (
+        <p className="mt-2 inline-flex rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-white">support</p>
+      ) : null}
+      {group && !support ? <p className="mt-2 shrink-0 text-[13px] font-semibold text-ink">{group}</p> : null}
+      {!support && seats && seats.length === 0 ? <p className="mt-2 shrink-0 text-[13px] leading-5 text-muted">This organization has no seats yet.</p> : null}
+      {!support && seats && seats.length > 0 ? (
         <>
           <input
             type="search"
@@ -171,14 +184,14 @@ function Composer({
         name="body"
         value={body}
         onChange={(event) => setBody(event.target.value)}
-        placeholder="Write to these seats."
+        placeholder={support ? "Write to support." : "Write to these seats."}
         rows={5}
         maxLength={2000}
-        data-help="The note these seats receive by email."
+        data-help={support ? "The note the system admins receive." : "The note these seats receive by email."}
       />
       {state.error ? <p className="mt-3 shrink-0 text-sm text-[#e4372d]">{state.error}</p> : null}
       <div className="mt-3 flex shrink-0 justify-end">
-        <SaveButton icon={FiSend} pending={pending} pendingLabel="Sending" disabled={pending || !ready} data-help="Email the chosen seats.">
+        <SaveButton icon={FiSend} pending={pending} pendingLabel="Sending" disabled={pending || !ready} data-help={support ? "Email the system admins." : "Email the chosen seats."}>
           Send
         </SaveButton>
       </div>

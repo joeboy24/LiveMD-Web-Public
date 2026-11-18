@@ -50,7 +50,7 @@ export function SongList({
 
   return (
     <>
-      <ul className="mt-4 grid gap-2">
+      <ul className="mt-4 grid min-w-0 gap-2">
         {rows.map((song, index) => (
           <li
             key={song.id}
@@ -62,7 +62,7 @@ export function SongList({
               setDragged(null);
               place(songId, index);
             }}
-            className={`flex h-16 items-center gap-3 rounded-xl bg-surface px-3 ${dragged === song.id ? "opacity-50" : ""}`}
+            className={`flex h-16 min-w-0 items-center gap-3 rounded-xl bg-surface px-3 ${dragged === song.id ? "opacity-50" : ""}`}
           >
             {canEdit && rows.length > 1 ? (
               <button
