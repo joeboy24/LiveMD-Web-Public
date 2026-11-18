@@ -79,6 +79,7 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
         <h1 className="text-[17px] font-bold text-ink">Shows</h1>
         <button
           type="button"
+          data-help="Start a show with a name and a performance date."
           onClick={() => setAdding(true)}
           className="rounded-lg text-[13px] font-semibold text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
         >

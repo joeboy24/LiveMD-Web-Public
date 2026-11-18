@@ -65,7 +65,39 @@ async function migrate() {
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
     if (code !== "23505") throw error;
   }
+  await sql`
+    create table if not exists todos (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations (id),
+      body text not null,
+      done boolean not null default false,
+      created_at timestamptz not null default now()
+    )
+  `;
   await ensureAuthTables();
+}
+
+export type TodoItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+export async function listTodos(): Promise<TodoItem[]> {
+  const organization = await readOrganization();
+  if (!organization) return [];
+  const sql = getSql();
+  const rows = await sql`
+    select id, body, done
+    from todos
+    where organization_id = ${organization.id}
+    order by created_at asc
+  `;
+  return rows.map((row) => ({
+    id: String(row.id),
+    text: String(row.body),
+    done: row.done === true,
+  }));
 }
 
 export async function organizationId() {

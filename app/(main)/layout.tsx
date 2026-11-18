@@ -4,11 +4,12 @@ import { readAccess } from "../auth/access";
 import { readSessionAccount } from "../auth/queries";
 import { AccountBar } from "../components/account-bar";
 import { CurrentAccount } from "../components/current-account";
-import { IconRail } from "../components/icon-rail";
+import { Workspace } from "../components/workspace";
 import { OrganizationLabel } from "../components/organization-header";
 import { SiteHeader } from "../components/site-header";
 import { SetlistHistory } from "../shows/history";
 import { ShowSidebar } from "../shows/show-sidebar";
+import { listTodos } from "./organization/queries";
 
 export default function MainLayout({ children }: LayoutProps<"/">) {
   return (
@@ -23,6 +24,7 @@ async function MainShell({ children }: { children: ReactNode }) {
   if (!account) redirect("/sign-in");
   const access = await readAccess();
   if (!access.web) return <PlayerSeat />;
+  const todos = await listTodos();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SiteHeader
@@ -35,16 +37,15 @@ async function MainShell({ children }: { children: ReactNode }) {
         }
       />
       <SetlistHistory>
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[300px_minmax(0,3fr)_minmax(180px,1fr)_3.25rem] md:overflow-hidden">
-          <aside className="flex min-h-0 w-full min-w-0 flex-col overflow-x-hidden px-4 pt-4 md:h-full md:overflow-hidden md:border-r md:border-surface-elevated md:px-3 md:py-4">
+        <Workspace
+          shows={
             <Suspense fallback={<p className="text-base text-muted">Loading shows.</p>}>
               <ShowSidebar />
             </Suspense>
-          </aside>
-          <main className="flex min-h-0 flex-col overflow-y-auto px-4 py-4 md:overflow-hidden md:px-6">{children}</main>
-          <aside aria-label="Chat and todos" className="hidden min-h-0 border-l border-surface-elevated md:block" />
-          <IconRail />
-        </div>
+          }
+          main={children}
+          todos={todos}
+        />
       </SetlistHistory>
     </div>
   );

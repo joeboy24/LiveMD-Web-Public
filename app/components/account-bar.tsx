@@ -39,6 +39,7 @@ export function AccountBar({
           type="button"
           aria-expanded={menu === "organization"}
           aria-haspopup="menu"
+          data-help="The organization. Open it to switch the pages for seats, roles, and the plan."
           onClick={() => setMenu((current) => (current === "organization" ? null : "organization"))}
           className="flex h-9 items-center gap-2 rounded-full bg-background px-4 text-[14px] font-semibold text-ink outline-none hover:bg-surface-elevated focus-visible:ring-2 focus-visible:ring-primary-hover"
         >
@@ -51,6 +52,7 @@ export function AccountBar({
         <button
           type="button"
           aria-label="Account"
+          data-help="This seat. Appearance and sign out are here."
           aria-expanded={menu === "profile"}
           aria-haspopup="menu"
           onClick={() => setMenu((current) => (current === "profile" ? null : "profile"))}

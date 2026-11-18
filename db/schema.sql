@@ -44,6 +44,14 @@ create table if not exists sign_in_links (
   created_at timestamptz not null default now()
 );
 
+create table if not exists todos (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations (id),
+  body text not null,
+  done boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
 create unique index if not exists seats_organization_email
   on seats (organization_id, lower(email))
   where email is not null;

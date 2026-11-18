@@ -13,11 +13,31 @@ function sender(user: string) {
   return `"${from.replaceAll('"', "")}" <${user}>`;
 }
 
+const publicSite = "https://web-pi-beige-81.vercel.app";
+
 export async function appOrigin() {
+  const configured = originFrom(process.env.APP_ORIGIN) || originFrom(process.env.VERCEL_PROJECT_PRODUCTION_URL);
+  if (configured) return configured;
   const headerList = await headers();
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
-  const proto = headerList.get("x-forwarded-proto") ?? "http";
-  return host ? `${proto}://${host}` : "http://localhost:3000";
+  const proto = headerList.get("x-forwarded-proto") ?? "https";
+  if (host && !localHost(host)) return `${proto}://${host}`;
+  return publicSite;
+}
+
+function originFrom(value: string | undefined) {
+  const raw = value?.trim();
+  if (!raw) return "";
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).origin;
+  } catch {
+    return "";
+  }
+}
+
+function localHost(host: string) {
+  const name = host.replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+  return name === "localhost" || name === "127.0.0.1" || name === "::1";
 }
 
 export async function sendMail(to: string, subject: string, text: string, html: string) {

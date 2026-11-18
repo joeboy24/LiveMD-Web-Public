@@ -1061,7 +1061,7 @@ export function Arrangement({
   const percent = progress === null ? 0 : Math.round(Math.min(Math.max(progress, 0), 1) * 100);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div data-help="The arrangement. Play the track, mark sections, and place cues." className="flex h-full min-h-0 flex-col">
       {settingsOpen ? (
         <SongSettings
           songKey={song.key}
@@ -1076,6 +1076,7 @@ export function Arrangement({
         <button
           type="button"
           aria-label="Setlist"
+          data-help="Leave the arrangement and return to the setlist."
           onClick={leave}
           className="grid size-8 place-items-center rounded-lg text-ink outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
         >
@@ -1158,6 +1159,7 @@ export function Arrangement({
           <button
             type="button"
             aria-label={preparing ? "Preparing" : playing ? "Pause" : "Play"}
+            data-help={preparing ? "The track is still loading." : playing ? "Pause playback." : "Play from the playhead."}
             disabled={!ready}
             onClick={togglePlay}
             className="grid size-8 place-items-center rounded-full bg-primary text-[11px] font-bold text-white tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-primary-hover disabled:opacity-40"
@@ -1183,6 +1185,7 @@ export function Arrangement({
           </button>
           <button
             type="button"
+            data-help={rehearsal ? "Switch to the production layout." : "Switch to the rehearsal layout."}
             onClick={toggleRehearsal}
             className={`h-8 rounded-[10px] px-2.5 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary-hover ${rehearsal ? "bg-primary text-white" : "bg-surface text-ink"}`}
           >
@@ -1198,6 +1201,7 @@ export function Arrangement({
           <button
             key={item}
             type="button"
+            data-help={item === "tracks" ? "The stems, the guide, and the wave." : item === "sections" ? "Name the sections and set where each one starts." : "Spoken cues on the wave."}
             onClick={() => setSegment(item)}
             className={
               segment === item

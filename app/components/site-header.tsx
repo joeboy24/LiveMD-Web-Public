@@ -38,7 +38,7 @@ function HeaderFrame({
   return (
     <header className="border-b border-surface-elevated bg-surface">
       <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-3 py-3.5 pr-4 pl-4">
-        <Link href="/" className="flex items-center gap-2.5 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary-hover">
+        <Link href="/" data-help="Live MD. Opens the shows." className="flex items-center gap-2.5 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary-hover">
           <span className="relative grid size-9 place-items-center overflow-hidden rounded-xl bg-primary text-white shadow-[0_8px_18px_rgb(7_111_191/0.45)]">
             <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgb(255_255_255/0.28),transparent_58%)]" />
             <Waveform />
@@ -56,6 +56,7 @@ function HeaderFrame({
               <Link
                 key={link.href}
                 href={link.href}
+                data-help={link.href === "/" ? "The shows and the arrangement." : "The organization, its seats, and its plan."}
                 aria-current={selected ? "page" : undefined}
                 className={
                   selected
