@@ -5,9 +5,11 @@ import { createPortal } from "react-dom";
 
 export function RowMenu({
   label,
+  help,
   items,
 }: {
   label: string;
+  help?: string;
   items: { label: string; onSelect?: () => void; disabled?: boolean }[];
 }) {
   const [open, setOpen] = useState(false);
@@ -46,6 +48,7 @@ export function RowMenu({
       <button
         type="button"
         aria-label={label}
+        data-help={help}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((value) => !value)}

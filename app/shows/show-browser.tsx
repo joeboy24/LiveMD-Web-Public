@@ -11,6 +11,8 @@ import { PrimaryButton } from "../components/primary-button";
 import { MonthCalendar } from "../components/month-calendar";
 import { RowMenu } from "../components/row-menu";
 import { SearchField } from "../components/search-field";
+import { roles } from "../(main)/organization/sample";
+import type { SeatGroup } from "../(main)/organization/queries";
 import { createShow, updateShow } from "./actions";
 import { useSetlistHistory } from "./history";
 import { downloadPublished } from "./publication";
@@ -41,13 +43,13 @@ function dayPhrase(dateKey: string) {
   }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
-export function ShowBrowser({ shows }: { shows: Show[] }) {
+export function ShowBrowser({ shows, groups }: { shows: Show[]; groups: SeatGroup[] }) {
   const router = useRouter();
   const history = useSetlistHistory();
   const selectedId = useSearchParams().get("show");
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<Show | null>(null);
+  const [editing, setEditing] = useState<{ show: Show; mode: "edit" | "permissions" } | null>(null);
   const [day, setDay] = useState<string | null>(null);
 
   function onSearch(next: string) {
@@ -100,12 +102,14 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
                 selected={show.id === selectedId}
                 leading={<DateMark month={show.month} day={show.day} />}
                 title={show.title}
-                meta={songCountLabel(show.songCount)}
+                meta={showMeta(show, groups)}
                 trailing={
                   <RowMenu
                     label={`${show.title} actions`}
+                    help="Edit the show, or set its permissions."
                     items={[
-                      { label: "Edit", onSelect: () => setEditing(show) },
+                      { label: "Edit", onSelect: () => setEditing({ show, mode: "edit" }) },
+                      { label: "Permissions", onSelect: () => setEditing({ show, mode: "permissions" }) },
                       {
                         label: "Download",
                         disabled: !show.published,
@@ -136,8 +140,16 @@ export function ShowBrowser({ shows }: { shows: Show[] }) {
           setQuery("");
         }}
       />
-      {adding ? <SetlistDialog onClose={() => setAdding(false)} /> : null}
-      {editing ? <SetlistDialog key={editing.id} show={editing} onClose={() => setEditing(null)} /> : null}
+      {adding ? <SetlistDialog groups={groups} onClose={() => setAdding(false)} /> : null}
+      {editing ? (
+        <SetlistDialog
+          key={`${editing.show.id}-${editing.mode}`}
+          show={editing.show}
+          mode={editing.mode}
+          groups={groups}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -149,25 +161,78 @@ function todayKey() {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
-function SetlistDialog({ show, onClose }: { show?: Show; onClose: () => void }) {
+function showMeta(show: Show, groups: SeatGroup[]) {
+  const songs = songCountLabel(show.songCount);
+  const limit = audienceLabel(show, groups);
+  return limit ? `${songs} · ${limit}` : songs;
+}
+
+function audienceLabel(show: Show, groups: SeatGroup[]) {
+  const names = [
+    ...show.audienceRoles,
+    ...show.audienceGroupIds.map((id) => groups.find((group) => group.id === id)?.name ?? ""),
+  ].filter(Boolean);
+  return names.join(", ");
+}
+
+function savedLimits(show: Show | undefined, groups: SeatGroup[]) {
+  if (!show) return [];
+  const roleLimits = show.audienceRoles
+    .filter((name) => roles.some((role) => role.name === name))
+    .map((name) => `role:${name}`);
+  const groupLimits = show.audienceGroupIds
+    .filter((id) => groups.some((group) => group.id === id))
+    .map((id) => `group:${id}`);
+  return [...roleLimits, ...groupLimits];
+}
+
+function sameLimits(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  const sorted = [...right].sort();
+  return [...left].sort().every((value, index) => value === sorted[index]);
+}
+
+function chosenLimits(formData: FormData) {
+  return formData
+    .getAll("limit")
+    .map(String)
+    .filter((value) => value.startsWith("role:") || value.startsWith("group:"));
+}
+
+function SetlistDialog({
+  show,
+  groups,
+  mode = "edit",
+  onClose,
+}: {
+  show?: Show;
+  groups: SeatGroup[];
+  mode?: "edit" | "permissions";
+  onClose: () => void;
+}) {
   const router = useRouter();
   const history = useSetlistHistory();
   const [name, setName] = useState(show?.title ?? "");
   const [performedOn, setPerformedOn] = useState(show?.dateKey ?? todayKey());
+  const [limits, setLimits] = useState(() => savedLimits(show, groups));
   const [state, formAction, pending] = useActionState(async (previous: FormState, formData: FormData) => {
     const title = String(formData.get("title") ?? "").trim();
     const date = String(formData.get("performedOn") ?? "").trim();
-    if (show && title === show.title && date === show.dateKey) {
+    const nextLimits = chosenLimits(formData);
+    const detailsChanged = !show || title !== show.title || date !== show.dateKey;
+    if (show && !detailsChanged && sameLimits(nextLimits, savedLimits(show, groups))) {
       onClose();
       return { error: null };
     }
     const result = show ? await updateShow(show.id, previous, formData) : await createShow(previous, formData);
     if (show && result.saved) {
-      history.record({
-        kind: "edit-show",
-        before: { id: show.id, title: show.title, performedOn: show.dateKey },
-        after: { id: show.id, title, performedOn: date },
-      });
+      if (detailsChanged) {
+        history.record({
+          kind: "edit-show",
+          before: { id: show.id, title: show.title, performedOn: show.dateKey },
+          after: { id: show.id, title, performedOn: date },
+        });
+      }
       onClose();
     }
     if (result.show) {
@@ -177,34 +242,129 @@ function SetlistDialog({ show, onClose }: { show?: Show; onClose: () => void }) 
     }
     return result;
   }, initialState);
+  const permissions = Boolean(show) && mode === "permissions";
   const ready = name.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(performedOn);
 
   return (
-    <Modal title={show ? "Edit Show" : "Add Setlist"} onClose={onClose}>
+    <Modal title={!show ? "Add Setlist" : permissions ? "Permissions" : "Edit Show"} onClose={onClose}>
       <form action={formAction}>
-        <Field
-          className="mt-4"
-          label="Show Name"
-          name="title"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="ex. Funkadelphi 2026"
-          autoFocus
-        />
-        <Field
-          className="mt-4"
-          label="Performance date"
-          name="performedOn"
-          type="date"
-          value={performedOn}
-          onChange={(event) => setPerformedOn(event.target.value)}
-          required
-        />
+        {permissions ? (
+          <>
+            <input type="hidden" name="title" value={name} />
+            <input type="hidden" name="performedOn" value={performedOn} />
+          </>
+        ) : (
+          <>
+            <Field
+              className="mt-4"
+              label="Show Name"
+              name="title"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="ex. Funkadelphi 2026"
+              autoFocus
+            />
+            <Field
+              className="mt-4"
+              label="Performance date"
+              name="performedOn"
+              type="date"
+              value={performedOn}
+              onChange={(event) => setPerformedOn(event.target.value)}
+              required
+            />
+            {limits.map((value) => (
+              <input key={value} type="hidden" name="limit" value={value} />
+            ))}
+          </>
+        )}
+        {permissions ? (
+          <PermissionChoices
+            groups={groups}
+            limits={limits}
+            onToggle={(value) => setLimits((current) => (
+              current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
+            ))}
+          />
+        ) : null}
         {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
         <PrimaryButton type="submit" disabled={pending || !ready} className="mt-4 w-full">
           {pending ? "Saving…" : show ? "Save" : "Add Setlist"}
         </PrimaryButton>
       </form>
     </Modal>
+  );
+}
+
+function PermissionChoices({
+  groups,
+  limits,
+  onToggle,
+}: {
+  groups: SeatGroup[];
+  limits: string[];
+  onToggle: (value: string) => void;
+}) {
+  return (
+    <div className="mt-4" data-help="Choose any roles or groups. A seat can open the show when it matches one of them.">
+      <ChoiceList
+        label="Roles"
+        items={roles.map((role) => ({ value: `role:${role.name}`, label: role.name }))}
+        limits={limits}
+        onToggle={onToggle}
+      />
+      {groups.length > 0 ? (
+        <ChoiceList
+          className="mt-4"
+          label="Groups"
+          items={groups.map((group) => ({ value: `group:${group.id}`, label: group.name }))}
+          limits={limits}
+          onToggle={onToggle}
+        />
+      ) : null}
+      <p className="mt-3 text-[12px] leading-5 text-muted">
+        A seat can open this show when it matches any chosen role or group. With none chosen, everyone can open it. Owner and music director can still open every show.
+      </p>
+    </div>
+  );
+}
+
+function ChoiceList({
+  label,
+  items,
+  limits,
+  onToggle,
+  className = "",
+}: {
+  label: string;
+  items: { value: string; label: string }[];
+  limits: string[];
+  onToggle: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <section className={className}>
+      <p className="text-[11px] font-semibold tracking-[0.16em] text-muted">{label.toUpperCase()}</p>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {items.map((item) => {
+          const on = limits.includes(item.value);
+          return (
+            <li key={item.value}>
+              <label className={`block cursor-pointer rounded-full px-3 py-1 text-[13px] font-semibold outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary-hover ${on ? "bg-primary text-white" : "bg-background text-muted hover:text-ink"}`}>
+                <input
+                  type="checkbox"
+                  name="limit"
+                  value={item.value}
+                  checked={on}
+                  onChange={() => onToggle(item.value)}
+                  className="sr-only"
+                />
+                {item.label}
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

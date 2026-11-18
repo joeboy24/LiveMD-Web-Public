@@ -53,6 +53,7 @@ export function Stat({ label, value }: { label: string; value: string }) {
 
 const areas = [
   { href: "/organization/seats", title: "Seats", detail: "The people who can open the player." },
+  { href: "/organization/groups", title: "Groups", detail: "Gather seats to message them, or to limit a show." },
   { href: "/organization/roles", title: "Roles", detail: "Owner, music director, musician, and playback operator." },
   { href: "/organization/plan", title: "Plan", detail: "A personal copy, or a block of 50 or 100 seats." },
 ] as const;
@@ -61,7 +62,7 @@ export function AreaLinks() {
   return (
     <section>
       <h2 className="text-[13px] font-semibold tracking-[0.14em] text-muted">INSIDE</h2>
-      <ul className="mt-3 grid gap-3 md:grid-cols-3">
+      <ul className="mt-3 grid gap-3 md:grid-cols-2">
         {areas.map((area) => (
           <li key={area.href}>
             <Link

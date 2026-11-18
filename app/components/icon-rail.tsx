@@ -3,14 +3,15 @@
 import { FiBell, FiCheckSquare, FiHelpCircle, FiMessageSquare } from "react-icons/fi";
 import { LuSparkles } from "react-icons/lu";
 import type { IconType } from "react-icons";
+import type { SideFeature } from "./panel";
 
-export type SideFeature = "help" | "tasks";
+export type { SideFeature };
 
 const tools: { id: SideFeature | null; label: string; help: string; icon: IconType; dot?: boolean }[] = [
   { id: "help", label: "Help", help: "Open notes for the control under the pointer.", icon: FiHelpCircle },
   { id: null, label: "Notifications", help: "Alerts for this organization.", icon: FiBell, dot: true },
   { id: "tasks", label: "Tasks", help: "Open the to-do list.", icon: FiCheckSquare },
-  { id: null, label: "Chat", help: "Messages for the room.", icon: FiMessageSquare },
+  { id: "message", label: "Chat", help: "Open a message to the last chosen group.", icon: FiMessageSquare },
   { id: null, label: "Sparkles", help: "Suggestions for the arrangement.", icon: LuSparkles },
 ];
 

@@ -7,6 +7,8 @@ export type Show = {
   dateLabel: string;
   dateKey: string;
   published: boolean;
+  audienceRoles: string[];
+  audienceGroupIds: string[];
 };
 
 export type PublishedSong = {

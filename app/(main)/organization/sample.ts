@@ -14,7 +14,7 @@ export const roles = [
   },
   {
     name: "Music director",
-    detail: "Prepares the arrangement, the cues, and the mix.",
+    detail: "Prepares the arrangement, the cues, and the mix. Can open every show.",
     audio: "Every layer",
     color: "#25C290",
   },

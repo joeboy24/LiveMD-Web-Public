@@ -74,6 +74,36 @@ async function migrate() {
       created_at timestamptz not null default now()
     )
   `;
+  await sql`
+    create table if not exists groups (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations (id),
+      name text not null,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists group_seats (
+      group_id uuid not null references groups (id),
+      seat_id uuid not null references seats (id),
+      primary key (group_id, seat_id)
+    )
+  `;
+  await sql`alter table shows add column if not exists audience text not null default 'everyone'`;
+  await sql`alter table shows add column if not exists audience_role text`;
+  await sql`alter table shows add column if not exists audience_group_id uuid`;
+  await sql`alter table shows add column if not exists audience_roles jsonb not null default '[]'::jsonb`;
+  await sql`alter table shows add column if not exists audience_group_ids jsonb not null default '[]'::jsonb`;
+  await sql`
+    update shows
+    set audience_roles = jsonb_build_array(audience_role)
+    where audience = 'role' and audience_role is not null and audience_roles = '[]'::jsonb
+  `;
+  await sql`
+    update shows
+    set audience_group_ids = jsonb_build_array(audience_group_id)
+    where audience = 'group' and audience_group_id is not null and audience_group_ids = '[]'::jsonb
+  `;
   await ensureAuthTables();
 }
 
@@ -147,3 +177,63 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
     })),
   };
 });
+
+export type SeatAudience = {
+  role: string;
+  seatId: string;
+  seesAll: boolean;
+  groupIds: string[];
+};
+
+export const readSeatAudience = cache(async (): Promise<SeatAudience | null> => {
+  const account = await readSessionAccount();
+  const organization = await readOrganization();
+  if (!account || !organization) return null;
+  const seat = organization.seats.find((item) => item.accountId === account.id);
+  if (!seat) return null;
+  const seesAll = seat.role === "Owner" || seat.role === "Music director";
+  if (seesAll) return { role: seat.role, seatId: seat.id, seesAll, groupIds: [] };
+  const sql = getSql();
+  const rows = await sql`select group_id from group_seats where seat_id = ${seat.id}`;
+  return {
+    role: seat.role,
+    seatId: seat.id,
+    seesAll,
+    groupIds: rows.map((row) => String(row.group_id)),
+  };
+});
+
+export type SeatGroup = {
+  id: string;
+  name: string;
+  seatIds: string[];
+};
+
+export async function listGroups(): Promise<SeatGroup[]> {
+  const organization = await readOrganization();
+  if (!organization) return [];
+  const sql = getSql();
+  const groups = await sql`
+    select id, name
+    from groups
+    where organization_id = ${organization.id}
+    order by created_at asc
+  `;
+  const members = await sql`
+    select group_id as "groupId", seat_id as "seatId"
+    from group_seats
+    where group_id in (select id from groups where organization_id = ${organization.id})
+  `;
+  const byGroup = new Map<string, string[]>();
+  for (const row of members) {
+    const id = String(row.groupId);
+    const seats = byGroup.get(id) ?? [];
+    seats.push(String(row.seatId));
+    byGroup.set(id, seats);
+  }
+  return groups.map((group) => ({
+    id: String(group.id),
+    name: String(group.name),
+    seatIds: byGroup.get(String(group.id)) ?? [],
+  }));
+}

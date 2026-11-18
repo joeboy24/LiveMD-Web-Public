@@ -1,16 +1,14 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
-import { IconRail, type SideFeature } from "./icon-rail";
+import { useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { IconRail } from "./icon-rail";
 import { NotesPanel } from "./notes-panel";
+import { chooseFeature, readPanel, readPanelServer, subscribePanel } from "./panel";
 import type { TodoItem } from "../(main)/organization/queries";
 
 export function Workspace({ shows, main, todos }: { shows: ReactNode; main: ReactNode; todos: TodoItem[] }) {
-  const [feature, setFeature] = useState<SideFeature | null>(null);
-
-  function choose(next: SideFeature) {
-    setFeature((current) => (current === next ? null : next));
-  }
+  const panel = useSyncExternalStore(subscribePanel, readPanel, readPanelServer);
+  const feature = panel.feature;
 
   return (
     <div
@@ -29,8 +27,8 @@ export function Workspace({ shows, main, todos }: { shows: ReactNode; main: Reac
       >
         {main}
       </main>
-      {feature ? <NotesPanel feature={feature} todos={todos} /> : <div className="hidden md:block" />}
-      <IconRail feature={feature} onChoose={choose} />
+      {feature ? <NotesPanel feature={feature} todos={todos} group={panel.group} recipients={panel.recipients} /> : <div className="hidden md:block" />}
+      <IconRail feature={feature} onChoose={chooseFeature} />
     </div>
   );
 }

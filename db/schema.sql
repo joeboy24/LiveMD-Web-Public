@@ -56,12 +56,30 @@ create unique index if not exists seats_organization_email
   on seats (organization_id, lower(email))
   where email is not null;
 
+create table if not exists groups (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations (id),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists group_seats (
+  group_id uuid not null references groups (id),
+  seat_id uuid not null references seats (id),
+  primary key (group_id, seat_id)
+);
+
 create table if not exists shows (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   performed_on date not null,
   published_at timestamptz,
   published_snapshot jsonb,
+  audience text not null default 'everyone',
+  audience_role text,
+  audience_group_id uuid,
+  audience_roles jsonb not null default '[]'::jsonb,
+  audience_group_ids jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
 

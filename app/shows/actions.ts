@@ -5,8 +5,9 @@ import { denied } from "../auth/access";
 import { getSql } from "../db";
 import { storedMix } from "./mix";
 import { storedStage, storedTempo } from "./stage";
-import { organizationId } from "../(main)/organization/queries";
-import { listSongs } from "./queries";
+import { readOrganization } from "../(main)/organization/queries";
+import { roles } from "../(main)/organization/sample";
+import { listSongs, showIsOpen } from "./queries";
 import { publishableSongs, publishedShow, snapshotSongs } from "./publication";
 import { parseCues, parseSections } from "./structure";
 import { ownedAudioKey, signAudioRead, signAudioUpload } from "./storage";
@@ -26,6 +27,7 @@ export async function createShow(_state: FormState, formData: FormData): Promise
     values (${title}, ${performedOn}::date)
     returning id, title, performed_on::text as "performedOn"
   `;
+  await writeAudience(String(rows[0].id), formData);
   revalidatePath("/", "layout");
   const row = rows[0];
   return {
@@ -49,15 +51,47 @@ export async function updateShow(showId: string, _state: FormState, formData: Fo
   const performedOn = String(formData.get("performedOn") ?? "").trim();
   if (!title) return { error: "Enter a show name." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(performedOn)) return { error: "Choose a performance date." };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   const updated = await writeShow(showId, title, performedOn);
   if (!updated) return { error: "That show is missing." };
+  await writeAudience(showId, formData);
+  revalidatePath("/", "layout");
   return { error: null, saved: true };
 }
 
 export async function replaceShowDetails(show: { id: string; title: string; performedOn: string }) {
   const block = await denied("prepare");
   if (block) return null;
+  if (!(await showIsOpen(show.id))) return null;
   return writeShow(show.id, show.title, show.performedOn);
+}
+
+async function writeAudience(showId: string, formData: FormData) {
+  const chosen = formData.getAll("limit").map(String);
+  const roleNames = roles.map((item) => item.name).filter((name) => chosen.includes(`role:${name}`));
+  const requestedGroups = chosen
+    .filter((value) => value.startsWith("group:"))
+    .map((value) => value.slice("group:".length))
+    .filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  const organization = await readOrganization();
+  const sql = getSql();
+  const owned = organization
+    ? await sql`select id from groups where organization_id = ${organization.id}`
+    : [];
+  const allowed = new Set(owned.map((row) => String(row.id)));
+  const groupIds = requestedGroups.filter((id) => allowed.has(id));
+  const singleRole = roleNames.length === 1 && groupIds.length === 0 ? roleNames[0] : null;
+  const singleGroup = groupIds.length === 1 && roleNames.length === 0 ? groupIds[0] : null;
+  const audience = singleRole ? "role" : singleGroup ? "group" : roleNames.length + groupIds.length > 0 ? "limited" : "everyone";
+  await sql`
+    update shows
+    set audience = ${audience},
+        audience_role = ${singleRole},
+        audience_group_id = ${singleGroup},
+        audience_roles = ${JSON.stringify(roleNames)}::jsonb,
+        audience_group_ids = ${JSON.stringify(groupIds)}::jsonb
+    where id = ${showId}
+  `;
 }
 
 async function writeShow(showId: string, title: string, performedOn: string) {
@@ -76,6 +110,7 @@ async function writeShow(showId: string, title: string, performedOn: string) {
 export async function createSong(showId: string, _state: FormState, formData: FormData): Promise<FormState> {
   const block = await denied("prepare");
   if (block) return { error: block };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   const title = String(formData.get("title") ?? "").trim();
   const key = String(formData.get("key") ?? "").trim();
   const lyrics = String(formData.get("lyrics") ?? "");
@@ -138,6 +173,7 @@ export async function createSong(showId: string, _state: FormState, formData: Fo
 export async function updateSong(showId: string, _state: FormState, formData: FormData): Promise<FormState> {
   const block = await denied("prepare");
   if (block) return { error: block };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   const songId = String(formData.get("songId") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const key = String(formData.get("key") ?? "").trim();
@@ -179,6 +215,7 @@ export async function replaceSongDetails(
 ) {
   const block = await denied("prepare");
   if (block) return null;
+  if (!(await showIsOpen(showId))) return null;
   return writeSongDetails(showId, song.id, {
     title: song.title,
     tempo: song.tempo,
@@ -241,6 +278,7 @@ function trackChoice(showId: string, uploaded: FormDataEntryValue | null, curren
 
 export async function restoreSong(showId: string, song: Song) {
   if (await denied("prepare")) return;
+  if (!(await showIsOpen(showId))) return;
   const sql = getSql();
   const position = Number.isInteger(song.position) ? song.position : 0;
   await sql`
@@ -279,6 +317,7 @@ export async function restoreSong(showId: string, song: Song) {
 export async function orderSongs(showId: string, ids: string[]) {
   const block = await denied("prepare");
   if (block) return { error: block };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   const sql = getSql();
   const rows = await sql`select id from songs where show_id = ${showId}`;
   const owned = rows.map((row) => String(row.id));
@@ -295,16 +334,19 @@ export async function orderSongs(showId: string, ids: string[]) {
 export async function signUpload(input: { showId: string; fileName: string; contentType: string; size: number }) {
   const block = await denied("prepare");
   if (block) return { error: block };
+  if (!(await showIsOpen(input.showId))) return { error: "This show is limited to another group or role." };
   return signAudioUpload(input.showId, input.fileName, input.contentType, Number(input.size));
 }
 
 export async function readAudio(showId: string, key: string) {
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   return signAudioRead(showId, key);
 }
 
 export async function saveStemLayers(showId: string, songId: string, trackKeys: string[], guideKey: string | null) {
   const block = await denied("prepare");
   if (block) return { error: block };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   if (trackKeys.length > 16) return { error: "That arrangement is too long." };
   const tracks: string[] = [];
   for (const key of trackKeys) {
@@ -338,6 +380,7 @@ export async function saveArrangement(
 ) {
   const block = await denied("prepare");
   if (block) return { error: block };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   const cleanSections = parseSections(sections);
   const cleanCues = parseCues(cues);
   if (!cleanSections.length || cleanSections.length !== sections.length || cleanCues.length !== cues.length) {
@@ -367,6 +410,7 @@ export async function saveArrangement(
 export async function saveStage(showId: string, songId: string, tempo: number, stage: SongStage) {
   const block = await denied("stage");
   if (block) return { error: block };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   const cleanTempo = storedTempo(tempo);
   const clean = storedStage(stage);
   const sql = getSql();
@@ -385,6 +429,7 @@ export async function saveStage(showId: string, songId: string, tempo: number, s
 export async function saveMix(showId: string, songId: string, mix: SongMix) {
   const block = await denied("prepare");
   if (block) return { error: block };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   const clean = storedMix(mix);
   const sql = getSql();
   const rows = await sql`
@@ -401,6 +446,7 @@ export async function saveMix(showId: string, songId: string, mix: SongMix) {
 export async function publishShow(showId: string): Promise<{ error: string | null; publication?: PublishedShow }> {
   const block = await denied("publish");
   if (block) return { error: block };
+  if (!(await showIsOpen(showId))) return { error: "This show is limited to another group or role." };
   const sql = getSql();
   const shows = await sql`
     select id, title, performed_on::text as "performedOn"
@@ -437,6 +483,7 @@ export async function publishShow(showId: string): Promise<{ error: string | nul
 
 export async function deleteShow(showId: string): Promise<ShowSnapshot | null> {
   if (await denied("prepare")) return null;
+  if (!(await showIsOpen(showId))) return null;
   const sql = getSql();
   const shows = await sql`
     select id, title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as "publishedSnapshot"
@@ -533,6 +580,9 @@ export async function restoreShow(show: ShowSnapshot) {
 export async function deleteSong(songId: string) {
   if (await denied("prepare")) return;
   const sql = getSql();
+  const rows = await sql`select show_id from songs where id = ${songId}`;
+  const showId = rows[0] ? String(rows[0].show_id) : "";
+  if (!showId || !(await showIsOpen(showId))) return;
   await sql`delete from songs where id = ${songId}`;
   revalidatePath("/", "layout");
 }

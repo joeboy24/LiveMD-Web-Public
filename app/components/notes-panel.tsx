@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import type { SideFeature } from "./icon-rail";
+import { MessageSheet } from "./message-sheet";
+import type { MessageSeat, SideFeature } from "./panel";
 import { TodoList } from "./todo-list";
 import type { TodoItem } from "../(main)/organization/queries";
 
@@ -19,7 +20,17 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-export function NotesPanel({ feature, todos }: { feature: SideFeature; todos: TodoItem[] }) {
+export function NotesPanel({
+  feature,
+  todos,
+  group,
+  recipients,
+}: {
+  feature: SideFeature;
+  todos: TodoItem[];
+  group: string | null;
+  recipients: MessageSeat[];
+}) {
   return (
     <aside data-notes="" className="hidden min-h-0 overflow-y-auto border-l border-surface-elevated md:block">
       <div className="m-3 overflow-hidden rounded-2xl bg-surface shadow-[0_18px_40px_rgb(0_0_0/0.18)] ring-1 ring-white/10">
@@ -27,6 +38,7 @@ export function NotesPanel({ feature, todos }: { feature: SideFeature; todos: To
         <p className="px-3 pt-3 text-[11px] font-semibold tracking-[0.16em] text-muted">NOTES</p>
         <HelpNote />
         {feature === "tasks" ? <TodoList initial={todos} /> : null}
+        {feature === "message" ? <MessageSheet group={group} recipients={recipients} /> : null}
       </div>
     </aside>
   );
