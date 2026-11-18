@@ -11,7 +11,7 @@ const tools: { id: SideFeature | null; label: string; help: string; icon: IconTy
   { id: "help", label: "Help", help: "Open notes for the control under the pointer.", icon: FiHelpCircle },
   { id: null, label: "Notifications", help: "Alerts for this organization.", icon: FiBell, dot: true },
   { id: "tasks", label: "Tasks", help: "Open the to-do list.", icon: FiCheckSquare },
-  { id: "message", label: "Chat", help: "Open a message to the last chosen group.", icon: FiMessageSquare },
+  { id: "message", label: "Chat", help: "Open a message and choose the seats that receive it.", icon: FiMessageSquare },
   { id: null, label: "Sparkles", help: "Suggestions for the arrangement.", icon: LuSparkles },
 ];
 

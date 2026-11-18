@@ -27,7 +27,7 @@ export function Workspace({ shows, main, todos }: { shows: ReactNode; main: Reac
       >
         {main}
       </main>
-      {feature ? <NotesPanel feature={feature} todos={todos} group={panel.group} recipients={panel.recipients} /> : <div className="hidden md:block" />}
+      {feature ? <NotesPanel feature={feature} todos={todos} groupId={panel.groupId} group={panel.group} recipients={panel.recipients} /> : <div className="hidden md:block" />}
       <IconRail feature={feature} onChoose={chooseFeature} />
     </div>
   );

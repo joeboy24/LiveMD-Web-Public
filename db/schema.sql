@@ -69,6 +69,16 @@ create table if not exists group_seats (
   primary key (group_id, seat_id)
 );
 
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations (id),
+  group_name text not null,
+  subject text not null,
+  body text not null default '',
+  recipients jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists shows (
   id uuid primary key default gen_random_uuid(),
   title text not null,

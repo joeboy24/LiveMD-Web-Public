@@ -89,6 +89,18 @@ async function migrate() {
       primary key (group_id, seat_id)
     )
   `;
+  await sql`
+    create table if not exists messages (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations (id),
+      group_name text not null,
+      subject text not null,
+      body text not null default '',
+      recipients jsonb not null default '[]'::jsonb,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`alter table messages add column if not exists body text not null default ''`;
   await sql`alter table shows add column if not exists audience text not null default 'everyone'`;
   await sql`alter table shows add column if not exists audience_role text`;
   await sql`alter table shows add column if not exists audience_group_id uuid`;
