@@ -4,15 +4,21 @@ import { sessionCookieName } from "./app/auth/cookie";
 export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   if (path === "/sign-in" || path.startsWith("/sign-in/") || path.startsWith("/api/player") || path.startsWith("/fonts")) {
-    return NextResponse.next();
+    return continueWithPath(request);
   }
   const session = request.cookies.get(sessionCookieName)?.value;
-  if (session) return NextResponse.next();
+  if (session) return continueWithPath(request);
   if (path.startsWith("/api/")) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   const url = request.nextUrl.clone();
   url.pathname = "/sign-in";
   url.search = "";
   return NextResponse.redirect(url);
+}
+
+function continueWithPath(request: NextRequest) {
+  const headers = new Headers(request.headers);
+  headers.set("x-livemd-path", request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

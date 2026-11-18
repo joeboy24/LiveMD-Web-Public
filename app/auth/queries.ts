@@ -200,6 +200,57 @@ export async function createPasswordAccount(email: string, name: string, passwor
   return accountId;
 }
 
+export async function readAccountSecret(accountId: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const rows = await sql`
+    select password_hash
+    from accounts
+    where id = ${accountId}
+    limit 1
+  `;
+  return rows[0]?.password_hash ? String(rows[0].password_hash) : null;
+}
+
+export async function saveAccountName(accountId: string, name: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  await sql`update accounts set name = ${name} where id = ${accountId}`;
+  await sql`update seats set name = ${name} where account_id = ${accountId}`;
+}
+
+export async function saveAccountEmail(accountId: string, email: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const taken = await sql`
+    select id from accounts
+    where lower(email) = ${email} and id <> ${accountId}
+    limit 1
+  `;
+  if (taken[0]) return false;
+  const seatTaken = await sql`
+    select id from seats
+    where lower(email) = ${email}
+      and account_id is distinct from ${accountId}
+    limit 1
+  `;
+  if (seatTaken[0]) return false;
+  try {
+    await sql`update accounts set email = ${email} where id = ${accountId}`;
+    await sql`update seats set email = ${email} where account_id = ${accountId}`;
+  } catch (error) {
+    if (duplicateRelation(error)) return false;
+    throw error;
+  }
+  return true;
+}
+
+export async function replaceAccountPassword(accountId: string, passwordHash: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  await sql`update accounts set password_hash = ${passwordHash} where id = ${accountId}`;
+}
+
 export async function setAccountPassword(accountId: string, name: string, passwordHash: string) {
   await ensureAuthTables();
   const sql = getSql();
