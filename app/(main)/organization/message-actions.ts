@@ -4,6 +4,7 @@ import { denied } from "../../auth/access";
 import { messageLetter } from "../../auth/letter";
 import { mailConfigured, sendMail } from "../../auth/mail";
 import { getSql } from "../../db";
+import { notifySeats } from "./notify";
 import { readOrganization } from "./queries";
 
 export type MessageState = { error: string | null; sent: number; stamp: string };
@@ -89,16 +90,25 @@ export async function sendGroupMessage(_state: MessageState, formData: FormData)
   const label = clip(formData.get("label"), 60) || "Seats";
   const letter = messageLetter(organization.name, label, subject, body);
   const sql = getSql();
-  const delivered: string[] = [];
+  const delivered: { id: string; name: string }[] = [];
   for (const seat of targets) {
     const result = await sendMail(String(seat.email), letter.subject, letter.text, letter.html);
-    if (!result.error) delivered.push(String(seat.name));
+    if (!result.error) delivered.push({ id: seat.id, name: String(seat.name) });
   }
   if (delivered.length === 0) return { error: "The email could not be sent.", sent: 0, stamp: "" };
   await sql`
     insert into messages (organization_id, group_name, subject, body, recipients)
-    values (${organization.id}, ${label}, ${subject}, ${body}, ${JSON.stringify(delivered)}::jsonb)
+    values (${organization.id}, ${label}, ${subject}, ${body}, ${JSON.stringify(delivered.map((seat) => seat.name))}::jsonb)
   `;
+  await notifySeats(
+    delivered.map((seat) => ({
+      organizationId: organization.id,
+      seatId: seat.id,
+      kind: "note" as const,
+      title: subject,
+      body,
+    })),
+  );
   return { error: null, sent: delivered.length, stamp: crypto.randomUUID() };
 }
 

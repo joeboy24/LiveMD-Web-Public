@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { MessageSheet } from "./message-sheet";
+import { NotificationSheet } from "./notification-sheet";
 import type { MessageSeat, SideFeature } from "./panel";
 import { TodoList } from "./todo-list";
 import type { TodoItem } from "../(main)/organization/queries";
@@ -41,6 +42,7 @@ export function NotesPanel({
         <HelpNote />
         {feature === "tasks" ? <TodoList initial={todos} /> : null}
         {feature === "message" ? <MessageSheet groupId={groupId} group={group} recipients={recipients} /> : null}
+        {feature === "notifications" ? <NotificationSheet /> : null}
       </div>
     </aside>
   );

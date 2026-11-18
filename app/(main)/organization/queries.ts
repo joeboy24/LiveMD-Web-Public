@@ -101,6 +101,22 @@ async function migrate() {
     )
   `;
   await sql`alter table messages add column if not exists body text not null default ''`;
+  await sql`
+    create table if not exists notifications (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations (id),
+      seat_id uuid not null references seats (id),
+      kind text not null,
+      title text not null,
+      body text not null default '',
+      read_at timestamptz,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create index if not exists notifications_seat_created
+    on notifications (seat_id, created_at desc)
+  `;
   await sql`alter table shows add column if not exists audience text not null default 'everyone'`;
   await sql`alter table shows add column if not exists audience_role text`;
   await sql`alter table shows add column if not exists audience_group_id uuid`;

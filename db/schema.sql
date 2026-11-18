@@ -79,6 +79,20 @@ create table if not exists messages (
   created_at timestamptz not null default now()
 );
 
+create table if not exists notifications (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations (id),
+  seat_id uuid not null references seats (id),
+  kind text not null,
+  title text not null,
+  body text not null default '',
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists notifications_seat_created
+  on notifications (seat_id, created_at desc);
+
 create table if not exists shows (
   id uuid primary key default gen_random_uuid(),
   title text not null,

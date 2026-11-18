@@ -5,6 +5,7 @@ import { denied } from "../auth/access";
 import { getSql } from "../db";
 import { storedMix } from "./mix";
 import { storedStage, storedTempo } from "./stage";
+import { notifyPublishedShow } from "../(main)/organization/notify";
 import { readOrganization } from "../(main)/organization/queries";
 import { roles } from "../(main)/organization/sample";
 import { listSongs, showIsOpen } from "./queries";
@@ -466,6 +467,8 @@ export async function publishShow(showId: string): Promise<{ error: string | nul
   `;
   const publishedAt = rows[0]?.publishedAt;
   if (!publishedAt) return { error: "That show didn't publish." };
+  const organization = await readOrganization();
+  if (organization) await notifyPublishedShow(showId, organization.id);
   revalidatePath("/", "layout");
   return {
     error: null,

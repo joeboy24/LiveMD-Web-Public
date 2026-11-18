@@ -1,6 +1,6 @@
 "use client";
 
-export type SideFeature = "help" | "tasks" | "message";
+export type SideFeature = "help" | "tasks" | "message" | "notifications";
 
 export type MessageSeat = {
   id: string;

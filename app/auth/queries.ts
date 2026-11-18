@@ -3,6 +3,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { sessionCookieName } from "./cookie";
 import { getSql } from "../db";
+import { notifyLeaders } from "../(main)/organization/notify";
 
 const cookieName = sessionCookieName;
 const linkMinutes = 15;
@@ -212,7 +213,7 @@ export async function setAccountPassword(accountId: string, name: string, passwo
 
 export async function attachSeats(email: string, accountId: string) {
   const sql = getSql();
-  await sql`
+  const rows = await sql`
     update seats
     set account_id = ${accountId},
         accepted_at = case
@@ -220,7 +221,22 @@ export async function attachSeats(email: string, accountId: string) {
           else accepted_at
         end
     where lower(email) = ${email}
+    returning id, organization_id as "organizationId", name,
+      (invited_at is not null and accepted_at = now()) as joined
   `;
+  for (const row of rows) {
+    if (row.joined !== true || !row.organizationId) continue;
+    try {
+      await notifyLeaders(
+        String(row.organizationId),
+        `${String(row.name)} joined`,
+        `${String(row.name)} accepted the invitation.`,
+        String(row.id),
+      );
+    } catch {
+      // The seat is already attached. A missed alert can wait for the next visit.
+    }
+  }
 }
 
 export async function openSession(accountId: string) {
