@@ -1,8 +1,7 @@
 import { Suspense } from "react";
-import { readDiscounts, readPlanPrices } from "../organization/billing";
+import { readPlanPrices } from "../organization/billing";
 import { PageIntro } from "../organization/chrome";
 import { planAccent, plans, storageGb } from "../organization/sample";
-import { DiscountForm } from "./discount-form";
 import { PriceForm } from "./price-form";
 
 export default function AdminPricesPage() {
@@ -14,7 +13,7 @@ export default function AdminPricesPage() {
 }
 
 async function Prices() {
-  const [prices, discounts] = await Promise.all([readPlanPrices(), readDiscounts()]);
+  const prices = await readPlanPrices();
   const paid = plans;
   return (
     <div className="grid gap-8">
@@ -57,7 +56,6 @@ async function Prices() {
           );
         })}
       </ul>
-      <DiscountForm discounts={discounts} />
     </div>
   );
 }

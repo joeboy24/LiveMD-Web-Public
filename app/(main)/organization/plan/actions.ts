@@ -4,7 +4,7 @@ import { readAccess } from "../../../auth/access";
 import { appOrigin } from "../../../auth/mail";
 import { readSessionAccount } from "../../../auth/queries";
 import { getSql } from "../../../db";
-import { applySmallerPlan, isPaidPlan, livePlan, paymentsConfigured, readDiscounts, readPlanPrice, readSeatAllowance, recordPaidSession, stripeClient, termOpen, writeCustomSeats, type PlanTerm } from "../billing";
+import { applySmallerPlan, isPaidPlan, livePlan, paymentsConfigured, readDiscounts, readPlanPrice, readProrationCredit, readSeatAllowance, recordPaidSession, stripeClient, termOpen, writeCustomSeats, type PlanTerm } from "../billing";
 import { orderCents, termTotalCents, type OrderDiscount } from "../sample";
 import { readOrganization } from "../queries";
 import { plans } from "../sample";
@@ -22,7 +22,7 @@ export async function buyPlan(_state: PlanState, formData: FormData): Promise<Pl
   const current = livePlan(organization.plan, organization.planUntil);
   const nextSeats = await readSeatAllowance(plan);
   const nowSeats = await readSeatAllowance(current);
-  const renewPersonal = plan === "Personal" && current === "Personal";
+  const renewPersonal = plan === "Personal" && current === "Personal" && !termOpen(organization.planUntil);
   if (nextSeats < nowSeats || (nextSeats === nowSeats && !renewPersonal)) return { error: "That plan is already in place." };
   if (!paymentsConfigured()) return { error: "Payments are not set up yet." };
   if (plan === "Custom") {
@@ -38,8 +38,10 @@ export async function buyPlan(_state: PlanState, formData: FormData): Promise<Pl
   if (plan === "Custom" && !(priced.seats && priced.seats > 100)) return { error: "Custom should be more than 100." };
   const discount = await discountFrom(formData.get("discount"));
   if (discount.error) return { error: discount.error };
-  const charge = orderCents(cents, discount.offer);
-  if (charge < 50) return { error: "That discount leaves less than 50 cents." };
+  const full = orderCents(cents, discount.offer);
+  const credit = Math.min(await readProrationCredit(organization.id), full);
+  const charge = full - credit;
+  if (charge < 50) return { error: credit > 0 ? "The credit leaves less than 50 cents." : "That discount leaves less than 50 cents." };
 
   const account = await readSessionAccount();
   const origin = await appOrigin();
@@ -64,7 +66,14 @@ export async function buyPlan(_state: PlanState, formData: FormData): Promise<Pl
         },
       ],
       ...(account?.email ? { customer_email: account.email } : {}),
-      metadata: { organizationId: organization.id, plan, term, seats: String(seats), ...(discount.offer ? { discount: discount.code } : {}) },
+      metadata: {
+        organizationId: organization.id,
+        plan,
+        term,
+        seats: String(seats),
+        ...(discount.offer ? { discount: discount.code } : {}),
+        ...(credit > 0 ? { credit: String(credit) } : {}),
+      },
     });
     if (!session.client_secret) return { error: "The card form did not open.", clientSecret: null, lock: "", sessionId: "" };
     return { error: null, clientSecret: session.client_secret, lock, sessionId: session.id };
@@ -97,6 +106,14 @@ export async function settlePayment(sessionId: string) {
   } catch {
     return;
   }
+}
+
+export async function readCheckoutCredit() {
+  const access = await readAccess();
+  if (access.role !== "Owner") return 0;
+  const organization = await readOrganization();
+  if (!organization) return 0;
+  return readProrationCredit(organization.id);
 }
 
 export async function choosePlan(_state: PlanState, formData: FormData): Promise<PlanState> {

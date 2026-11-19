@@ -66,9 +66,7 @@ export function DiscountForm({ discounts }: { discounts: Discount[] }) {
     <section className="overflow-hidden rounded-2xl bg-surface ring-1 ring-surface-elevated">
       <span className="block h-1 bg-primary" />
       <div className="p-5">
-        <h2 className="text-[18px] font-semibold tracking-tight text-ink">Discounts</h2>
-        <p className="mt-2 max-w-xl text-[14px] leading-6 text-muted">A code is up to 7 letters and numbers. Take a percent off, or a dollar amount off.</p>
-        <form action={action} className="mt-5 grid items-stretch gap-4 lg:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_auto]">
+        <form action={action} className="grid items-stretch gap-4 lg:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_auto]">
           <input type="hidden" name="kind" value={kind} />
           <label className="grid gap-1.5">
             <span className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">Code</span>

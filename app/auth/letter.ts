@@ -41,13 +41,15 @@ export function receiptLetter(input: {
   term: string;
   amount: string;
   discount: string | null;
+  credit: string | null;
   accent: string;
 }): Letter {
   const seats = input.seats === 1 ? "1 seat" : `${input.seats} seats`;
   const discount = input.discount ? `Discount ${input.discount}\n` : "";
+  const credit = input.credit ? `Prorated credit −${input.credit}\n` : "";
   return {
     subject: `Receipt for ${input.plan}`,
-    text: `Payment received for ${input.orgName}.\n${input.plan}\n${seats}\n${input.term}\n${input.amount}\n${discount}`,
+    text: `Payment received for ${input.orgName}.\n${input.plan}\n${seats}\n${input.term}\n${input.amount}\n${discount}${credit}`,
     html: receiptCard(input, seats),
   };
 }
@@ -206,7 +208,7 @@ function messageCard(orgName: string, group: string, subject: string, paragraphs
 }
 
 function receiptCard(
-  input: { orgName: string; plan: string; term: string; amount: string; discount: string | null; accent: string },
+  input: { orgName: string; plan: string; term: string; amount: string; discount: string | null; credit: string | null; accent: string },
   seats: string,
 ) {
   const rows = [
@@ -214,6 +216,7 @@ function receiptCard(
     ["Seats", seats],
     ["Term", input.term],
     ...(input.discount ? [["Discount", input.discount]] : []),
+    ...(input.credit ? [["Prorated credit", `−${input.credit}`]] : []),
     ["Total", input.amount],
   ];
   const body = rows

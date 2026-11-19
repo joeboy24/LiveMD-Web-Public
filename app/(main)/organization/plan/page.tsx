@@ -58,7 +58,7 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
           const selected = plan.name === current;
           const count = seats ?? 101;
           const terms = termsFor(price);
-          const buyingPersonal = owner && plan.name === "Personal" && current === "Personal" && terms.length > 0;
+          const buyingPersonal = owner && plan.name === "Personal" && current === "Personal" && !open && terms.length > 0;
           const intent = buyingPersonal ? "upgrade" : owner && count > allowance ? "upgrade" : owner && !open && seats != null && count < allowance ? "choose" : null;
           const storage = storageGb(plan.name);
           const accent = planAccent(plan.name);

@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiCreditCard, FiX } from "react-icons/fi";
-import { buyPlan, readCheckoutDiscount, settlePayment, type CheckoutDiscount, type PlanState } from "../(main)/organization/plan/actions";
+import { buyPlan, readCheckoutCredit, readCheckoutDiscount, settlePayment, type CheckoutDiscount, type PlanState } from "../(main)/organization/plan/actions";
 import { orderCents, termTotalCents } from "../(main)/organization/sample";
 import { CardPayment, cardFormReady } from "./card-payment";
 import { PaymentReceived } from "./payment-received";
@@ -21,14 +21,26 @@ export function CheckoutSheet({ draft }: { draft: CheckoutDraft }) {
   const [miss, setMiss] = useState(false);
   const [paid, setPaid] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [credit, setCredit] = useState(0);
   const choice = draft.terms.find((item) => item.term === term) ?? draft.terms[0];
   const total = choice ? termTotalCents(choice.cents, choice.term) : null;
   const offer = discount?.found ? discount : null;
-  const due = total == null ? null : orderCents(total, offer);
+  const full = total == null ? null : orderCents(total, offer);
+  const due = full == null ? null : Math.max(0, full - credit);
   const lock = `${draft.plan}:${choice?.term ?? ""}:${due ?? ""}:${code}`;
   const secret = state.clientSecret && state.lock === lock ? state.clientSecret : null;
   const seats = draft.seats === 1 ? "1 seat" : `${draft.seats} seats`;
   const hold = miss || (code.length > 0 && code.length < 7) || (due != null && due < 50);
+
+  useEffect(() => {
+    let live = true;
+    void readCheckoutCredit().then((cents) => {
+      if (live) setCredit(cents);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (code.length !== 7) return;
@@ -117,6 +129,7 @@ export function CheckoutSheet({ draft }: { draft: CheckoutDraft }) {
       </label>
       {offer ? <p className="mt-1.5 text-right text-[12px] font-semibold text-muted">{offLine(offer, draft.currency)}</p> : null}
       {miss ? <p className="mt-1.5 text-right text-[12px] font-semibold text-[#e4372d]">This code is incorrect.</p> : null}
+      {credit > 0 ? <p className="mt-1.5 text-right text-[12px] font-semibold text-muted">−{money(Math.min(credit, full ?? credit), draft.currency)} prorated credit</p> : null}
       <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-surface-elevated pt-3">
         <span className="text-[13px] font-semibold text-ink">Total</span>
         <span className="text-[22px] leading-none font-semibold tracking-tight text-ink tabular-nums">{due == null ? "" : money(due, draft.currency)}</span>

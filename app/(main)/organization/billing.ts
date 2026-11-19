@@ -104,6 +104,7 @@ async function preparePlanPrices() {
     )`,
   );
   await sql.query(`create index if not exists payments_organization on payments (organization_id, paid_at desc)`);
+  await sql.query(`alter table payments add column if not exists credit_cents integer`);
   await sql`
     insert into plan_prices (plan, quarter_cents, year_cents, currency)
     values ('Personal', 799, 699, 'usd')
@@ -175,7 +176,7 @@ export async function writeDiscount(input: { code: string; kind: DiscountKind; p
     on conflict (code) do nothing
     returning code
   `;
-  revalidatePath("/admin");
+  revalidatePath("/admin/discounts");
   return rows.length > 0;
 }
 
@@ -183,7 +184,7 @@ export async function deleteDiscount(code: string) {
   await ensurePlanPrices();
   const sql = getSql();
   await sql`delete from plan_discounts where code = ${code}`;
-  revalidatePath("/admin");
+  revalidatePath("/admin/discounts");
 }
 
 function discountFrom(row: Record<string, unknown>): PlanDiscount[] {
@@ -215,6 +216,38 @@ export async function writeCustomSeats(seats: number) {
   return true;
 }
 
+export function prorationCreditCents(paidCents: number, termStart: string, termEnd: string, now = Date.now()) {
+  const start = new Date(termStart).getTime();
+  const end = new Date(termEnd).getTime();
+  const total = end - start;
+  const left = end - now;
+  if (!Number.isInteger(paidCents) || paidCents < 1 || total <= 0 || left <= 0) return 0;
+  const credit = Math.round((paidCents * Math.min(left, total)) / total);
+  return Math.min(paidCents, Math.max(0, credit));
+}
+
+export async function readProrationCredit(organizationId: string) {
+  if (!isId(organizationId)) return 0;
+  await ensurePlanPrices();
+  const sql = getSql();
+  const orgs = await sql`select plan, plan_until as "planUntil" from organizations where id = ${organizationId} limit 1`;
+  const stored = orgs[0]?.plan ? String(orgs[0].plan) : "";
+  const until = orgs[0]?.planUntil ? new Date(String(orgs[0].planUntil)).toISOString() : null;
+  const current = livePlan(stored, until);
+  if (!until || !termOpen(until)) return 0;
+  const payments = await sql`
+    select amount_cents, paid_at as "paidAt"
+    from payments
+    where organization_id = ${organizationId} and plan = ${current}
+    order by paid_at desc
+    limit 1
+  `;
+  const paid = Number(payments[0]?.amount_cents);
+  const paidAt = payments[0]?.paidAt ? new Date(String(payments[0].paidAt)).toISOString() : "";
+  if (!paidAt) return 0;
+  return prorationCreditCents(paid, paidAt, until);
+}
+
 export function stripeClient() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) return null;
@@ -241,12 +274,14 @@ export async function recordPaidSession(session: Stripe.Checkout.Session) {
   const seats = Number.isInteger(metaSeats) && metaSeats > 0 ? metaSeats : await readSeatAllowance(plan);
   const email = session.customer_details?.email || session.customer_email || null;
   const discount = session.metadata?.discount || null;
+  const creditRaw = Number(session.metadata?.credit);
+  const credit = Number.isInteger(creditRaw) && creditRaw > 0 ? creditRaw : null;
   const currency = session.currency || "usd";
   await ensurePlanPrices();
   const sql = getSql();
   await sql`
-    insert into payments (organization_id, stripe_session_id, plan, term, seats, amount_cents, currency, discount, email)
-    values (${organizationId}, ${session.id}, ${plan}, ${term}, ${seats}, ${amount}, ${currency}, ${discount}, ${email})
+    insert into payments (organization_id, stripe_session_id, plan, term, seats, amount_cents, currency, discount, credit_cents, email)
+    values (${organizationId}, ${session.id}, ${plan}, ${term}, ${seats}, ${amount}, ${currency}, ${discount}, ${credit}, ${email})
     on conflict (stripe_session_id) do nothing
   `;
   await applyPaidPlan(organizationId, plan, term);
@@ -257,7 +292,7 @@ export async function recordPaidSession(session: Stripe.Checkout.Session) {
     returning id
   `;
   if (claimed.length === 0) return;
-  const sent = await sendReceipt({ organizationId, plan, seats, term, amount, currency, discount, email });
+  const sent = await sendReceipt({ organizationId, plan, seats, term, amount, currency, discount, credit, email });
   if (!sent) await sql`update payments set receipt_sent = false where stripe_session_id = ${session.id}`;
 }
 
@@ -269,6 +304,7 @@ async function sendReceipt(input: {
   amount: number;
   currency: string;
   discount: string | null;
+  credit: number | null;
   email: string;
 }) {
   const sql = getSql();
@@ -281,6 +317,7 @@ async function sendReceipt(input: {
     term: input.term === "quarter" ? "3 months" : "1 year",
     amount: receiptMoney(input.amount, input.currency),
     discount: await discountLabel(input.discount, input.currency),
+    credit: input.credit ? receiptMoney(input.credit, input.currency) : null,
     accent: planAccent(input.plan),
   });
   const result = await sendMail(input.email, letter.subject, letter.text, letter.html);
@@ -317,7 +354,7 @@ async function writePlan(organizationId: string, plan: string, direction: "up" |
   const current = livePlan(stored, until);
   const next = await readSeatAllowance(plan);
   const now = await readSeatAllowance(current);
-  const renewPersonal = direction === "up" && plan === "Personal" && current === "Personal";
+  const renewPersonal = direction === "up" && plan === "Personal" && current === "Personal" && !termOpen(until);
   if (!current || (direction === "up" ? next < now || (next === now && !renewPersonal) : next >= now || next < 1)) return false;
   if (direction === "down" && termOpen(until)) return false;
   if (direction === "down") {
