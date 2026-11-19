@@ -15,7 +15,7 @@ async function AdminFrame({ children }: { children: ReactNode }) {
   const admin = await readSystemAdmin();
   if (!admin) redirect("/");
   return (
-    <div className="mx-auto w-full max-w-6xl">
+    <div className="mx-auto h-full min-h-0 w-full max-w-6xl overflow-y-auto">
       <AdminNav />
       <div className="mt-8">{children}</div>
     </div>

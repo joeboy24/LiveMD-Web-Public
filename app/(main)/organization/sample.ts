@@ -68,6 +68,23 @@ export function termTotalCents(monthlyCents: number | null, term: "quarter" | "y
   return monthlyCents * (term === "quarter" ? 3 : 12);
 }
 
+export type OrderDiscount = {
+  kind: "percent" | "amount";
+  percent: number | null;
+  amountCents: number | null;
+};
+
+export function orderCents(totalCents: number, discount: OrderDiscount | null) {
+  if (!discount) return totalCents;
+  const off =
+    discount.kind === "percent" && discount.percent
+      ? Math.round((totalCents * discount.percent) / 100)
+      : discount.kind === "amount" && discount.amountCents
+        ? discount.amountCents
+        : 0;
+  return Math.max(0, totalCents - Math.min(totalCents, off));
+}
+
 export function customPriceCents(roomCents: number | null, customSeats: number) {
   if (roomCents == null) return null;
   const roomSeats = seatLimit("Room");

@@ -64,6 +64,15 @@ async function preparePlanPrices() {
   await sql.query(`alter table plan_prices add column if not exists year_cents integer`);
   await sql.query(`alter table plan_prices add column if not exists seats integer`);
   await sql.query(`alter table plan_prices alter column amount_cents drop not null`);
+  await sql.query(
+    `create table if not exists plan_discounts (
+      code text primary key,
+      kind text not null,
+      percent integer,
+      amount_cents integer,
+      created_at timestamptz not null default now()
+    )`,
+  );
 }
 
 export async function readPlanPrices() {
@@ -103,6 +112,57 @@ export function planCharge(prices: PlanPrice[], plan: string) {
 
 export async function readPlanPrice(plan: string) {
   return planCharge(await readPlanPrices(), plan);
+}
+
+export type DiscountKind = "percent" | "amount";
+
+export type PlanDiscount = {
+  code: string;
+  kind: DiscountKind;
+  percent: number | null;
+  amountCents: number | null;
+};
+
+export async function readDiscounts() {
+  await ensurePlanPrices();
+  const sql = getSql();
+  const rows = await sql`select code, kind, percent, amount_cents from plan_discounts order by created_at desc`;
+  return rows.flatMap((row) => discountFrom(row));
+}
+
+export async function writeDiscount(input: { code: string; kind: DiscountKind; percent: number | null; amountCents: number | null }) {
+  await ensurePlanPrices();
+  const sql = getSql();
+  const rows = await sql`
+    insert into plan_discounts (code, kind, percent, amount_cents)
+    values (${input.code}, ${input.kind}, ${input.percent}, ${input.amountCents})
+    on conflict (code) do nothing
+    returning code
+  `;
+  revalidatePath("/admin");
+  return rows.length > 0;
+}
+
+export async function deleteDiscount(code: string) {
+  await ensurePlanPrices();
+  const sql = getSql();
+  await sql`delete from plan_discounts where code = ${code}`;
+  revalidatePath("/admin");
+}
+
+function discountFrom(row: Record<string, unknown>): PlanDiscount[] {
+  const code = String(row.code ?? "").toUpperCase();
+  const kind = row.kind === "percent" || row.kind === "amount" ? row.kind : null;
+  if (!kind || !/^[A-Z0-9]{1,7}$/.test(code)) return [];
+  const percent = Number(row.percent);
+  const amountCents = Number(row.amount_cents);
+  if (kind === "percent" && Number.isInteger(percent) && percent >= 1 && percent <= 100) {
+    return [{ code, kind, percent, amountCents: null }];
+  }
+  if (kind === "amount" && Number.isInteger(amountCents) && amountCents >= 50) {
+    return [{ code, kind, percent: null, amountCents }];
+  }
+  return [];
 }
 
 export async function writeCustomSeats(seats: number) {
