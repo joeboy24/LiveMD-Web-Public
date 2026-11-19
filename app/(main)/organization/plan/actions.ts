@@ -20,7 +20,10 @@ export async function buyPlan(_state: PlanState, formData: FormData): Promise<Pl
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
   const current = livePlan(organization.plan, organization.planUntil);
-  if ((await readSeatAllowance(plan)) <= (await readSeatAllowance(current))) return { error: "That plan is already in place." };
+  const nextSeats = await readSeatAllowance(plan);
+  const nowSeats = await readSeatAllowance(current);
+  const renewPersonal = plan === "Personal" && current === "Personal";
+  if (nextSeats < nowSeats || (nextSeats === nowSeats && !renewPersonal)) return { error: "That plan is already in place." };
   if (!paymentsConfigured()) return { error: "Payments are not set up yet." };
   if (plan === "Custom") {
     const seats = Number(formData.get("seats"));
@@ -104,7 +107,7 @@ export async function choosePlan(_state: PlanState, formData: FormData): Promise
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
   const current = livePlan(organization.plan, organization.planUntil);
-  if (termOpen(organization.planUntil)) return { error: "A smaller plan opens when this one ends." };
+  if (termOpen(organization.planUntil)) return { error: "Another plan opens when this one ends." };
   if ((await readSeatAllowance(plan)) >= (await readSeatAllowance(current))) return { error: "That plan is already in place." };
   const saved = await applySmallerPlan(organization.id, plan);
   if (!saved) return { error: "That plan is already in place." };

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { readAccess } from "../../../auth/access";
-import { livePlan, planCharge, readPlanPrices, readSeatAllowance, termOpen, type PlanPrice } from "../billing";
+import { livePlan, planCharge, readPlanPrices, readSeatAllowance, termOpen, trialDaysLeft, type PlanPrice } from "../billing";
 import { settlePayment } from "./actions";
 import { PaidToast } from "./paid-toast";
 import { PageIntro } from "../chrome";
@@ -24,6 +24,7 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
   const current = livePlan(organization?.plan ?? "Personal", organization?.planUntil ?? null);
   const open = termOpen(organization?.planUntil ?? null);
   const until = open && organization?.planUntil ? formatTerm(organization.planUntil) : null;
+  const trialDays = organization?.plan === "Personal" && !open ? trialDaysLeft(organization.trialUntil) : null;
   const used = organization?.seats.length ?? 0;
   const allowance = await readSeatAllowance(current);
   const full = used >= allowance;
@@ -56,8 +57,9 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
         {cards.map(({ plan, price, seats }) => {
           const selected = plan.name === current;
           const count = seats ?? 101;
-          const intent = owner && count > allowance ? "upgrade" : owner && !open && seats != null && count < allowance ? "choose" : null;
           const terms = termsFor(price);
+          const buyingPersonal = owner && plan.name === "Personal" && current === "Personal" && terms.length > 0;
+          const intent = buyingPersonal ? "upgrade" : owner && count > allowance ? "upgrade" : owner && !open && seats != null && count < allowance ? "choose" : null;
           const storage = storageGb(plan.name);
           const accent = planAccent(plan.name);
           return (
@@ -94,16 +96,17 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
                   accent={accent}
                 />
               ) : (
-                <>
+                <div className="flex flex-1 flex-col">
                   <p className="mt-4 text-[36px] leading-none font-bold tracking-tight text-ink">{seats ?? "100+"}</p>
                   <p className="mt-1 text-[12px] font-semibold tracking-[0.14em] text-muted">{count === 1 ? "SEAT" : "SEATS"}</p>
                   <p className="mt-4 text-[14px] leading-6 text-muted">{plan.detail}</p>
+                  {trialDays != null && plan.name === "Personal" ? <TrialDays days={trialDays} /> : null}
                   {price ? <PriceLines price={price} /> : null}
                   {selected ? <SeatUse used={used} count={count} until={until} /> : null}
                   {intent === "choose" || (intent === "upgrade" && terms.length > 0) ? (
                     <PlanButton plan={plan.name} intent={intent} terms={terms} seats={count} currency={price?.currency ?? "usd"} storage={storage} accent={accent} />
                   ) : null}
-                </>
+                </div>
               )}
             </li>
           );
@@ -112,12 +115,17 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
       <p className="max-w-xl text-[14px] leading-6 text-muted">
         {owner
           ? until
-            ? `House and Room include 100 GB. Custom includes 150 GB. A smaller plan can be chosen after ${until}.`
-            : "House and Room include 100 GB. Custom includes 150 GB. The plan runs for the term that was paid."
+            ? `Personal includes 10 GB. House and Room include 100 GB. Custom includes 150 GB. Another plan can be chosen after ${until}.`
+            : "Personal includes 10 GB. House and Room include 100 GB. Custom includes 150 GB. The plan runs for the term that was paid."
           : "The owner chooses the plan."}
       </p>
     </div>
   );
+}
+
+function TrialDays({ days }: { days: number }) {
+  const label = days === 1 ? "1 day left" : `${days} days left`;
+  return <p className="mt-3 text-[13px] font-semibold text-[#e4372d]">{label}</p>;
 }
 
 function SeatUse({ used, count, until }: { used: number; count: number; until: string | null }) {

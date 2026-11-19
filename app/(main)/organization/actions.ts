@@ -28,8 +28,8 @@ export async function createOrganization(_state: OrganizationState, formData: Fo
 
   const sql = getSql();
   const rows = await sql`
-    insert into organizations (name)
-    values (${name})
+    insert into organizations (name, trial_until)
+    values (${name}, now() + interval '14 days')
     returning id
   `;
   const id = String(rows[0].id);

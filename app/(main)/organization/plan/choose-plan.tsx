@@ -20,7 +20,7 @@ export function PlanButton({
   accent,
 }: {
   plan: string;
-  intent: "upgrade" | "choose";
+  intent: "upgrade" | "choose" | "update";
   terms?: { term: "quarter" | "year"; label: string; cents: number }[];
   seats: number;
   currency: string;
@@ -48,12 +48,14 @@ export function PlanButton({
     );
   }
   const open = panel.feature === "checkout" && panel.checkout?.plan === plan;
+  const label = intent === "update" ? "Update" : "Upgrade";
   return (
     <div className="mt-auto pt-5">
       <UpgradeButton
         pressed={open}
         accent={accent}
-        help={`Upgrade to ${plan}.`}
+        label={label}
+        help={intent === "update" ? `Buy ${plan}.` : `Upgrade to ${plan}.`}
         onClick={() => openCheckout({ plan, terms, currency, seats, storage })}
       />
     </div>
@@ -204,7 +206,7 @@ export function CustomOffer({
   );
 }
 
-function UpgradeButton({ pressed, accent, help, onClick }: { pressed: boolean; accent: string; help: string; onClick: () => void }) {
+function UpgradeButton({ pressed, accent, help, onClick, label = "Upgrade" }: { pressed: boolean; accent: string; help: string; onClick: () => void; label?: string }) {
   return (
     <button
       type="button"
@@ -215,7 +217,7 @@ function UpgradeButton({ pressed, accent, help, onClick }: { pressed: boolean; a
       className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-semibold text-white outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-white/70"
     >
       <FiCreditCard aria-hidden className="size-3.5" />
-      <span>Upgrade</span>
+      <span>{label}</span>
     </button>
   );
 }

@@ -5,7 +5,7 @@ import { sendMail } from "../../auth/mail";
 import { getSql } from "../../db";
 import { customPriceCents, planAccent, plans, seatLimit, storageGb } from "./sample";
 
-const paidPlans = ["House", "Room", "Custom"] as const;
+const paidPlans = ["Personal", "House", "Room", "Custom"] as const;
 
 export type PaidPlan = (typeof paidPlans)[number];
 
@@ -30,6 +30,14 @@ export function livePlan(plan: string, planUntil: string | null) {
 
 export function termOpen(planUntil: string | null) {
   return Boolean(planUntil && new Date(planUntil).getTime() > Date.now());
+}
+
+export function trialDaysLeft(trialUntil: string | null) {
+  if (!trialUntil) return null;
+  const left = new Date(trialUntil).getTime() - Date.now();
+  if (!Number.isFinite(left)) return null;
+  if (left <= 0) return 0;
+  return Math.ceil(left / 86_400_000);
 }
 
 export async function readSeatAllowance(plan: string) {
@@ -96,6 +104,11 @@ async function preparePlanPrices() {
     )`,
   );
   await sql.query(`create index if not exists payments_organization on payments (organization_id, paid_at desc)`);
+  await sql`
+    insert into plan_prices (plan, quarter_cents, year_cents, currency)
+    values ('Personal', 799, 699, 'usd')
+    on conflict (plan) do nothing
+  `;
 }
 
 export async function readPlanPrices() {
@@ -304,7 +317,8 @@ async function writePlan(organizationId: string, plan: string, direction: "up" |
   const current = livePlan(stored, until);
   const next = await readSeatAllowance(plan);
   const now = await readSeatAllowance(current);
-  if (!current || (direction === "up" ? next <= now : next >= now || next < 1)) return false;
+  const renewPersonal = direction === "up" && plan === "Personal" && current === "Personal";
+  if (!current || (direction === "up" ? next < now || (next === now && !renewPersonal) : next >= now || next < 1)) return false;
   if (direction === "down" && termOpen(until)) return false;
   if (direction === "down") {
     await sql`update organizations set plan = ${plan}, plan_until = null where id = ${organizationId}`;

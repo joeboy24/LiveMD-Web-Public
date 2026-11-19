@@ -16,6 +16,7 @@ export type OrganizationRecord = {
   name: string;
   plan: string;
   planUntil: string | null;
+  trialUntil: string | null;
   seats: SeatRecord[];
 };
 
@@ -41,6 +42,12 @@ async function migrate() {
   `;
   await sql`alter table organizations add column if not exists plan text not null default 'Personal'`;
   await sql`alter table organizations add column if not exists plan_until timestamptz`;
+  await sql`alter table organizations add column if not exists trial_until timestamptz`;
+  await sql`
+    update organizations
+    set trial_until = now() + interval '14 days'
+    where plan = 'Personal' and plan_until is null and trial_until is null
+  `;
   await sql`
     create table if not exists seats (
       id uuid primary key default gen_random_uuid(),
@@ -171,7 +178,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
   const sql = getSql();
   const rows = account
     ? await sql`
-        select organizations.id, organizations.name, organizations.plan, organizations.plan_until as "planUntil"
+        select organizations.id, organizations.name, organizations.plan, organizations.plan_until as "planUntil", organizations.trial_until as "trialUntil"
         from seats
         join organizations on organizations.id = seats.organization_id
         where seats.account_id = ${account.id}
@@ -179,7 +186,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
         limit 1
       `
     : await sql`
-        select id, name, plan, plan_until as "planUntil"
+        select id, name, plan, plan_until as "planUntil", trial_until as "trialUntil"
         from organizations
         order by created_at asc
         limit 1
@@ -198,6 +205,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
     name: String(row.name),
     plan: String(row.plan ?? "Personal"),
     planUntil: row.planUntil ? new Date(String(row.planUntil)).toISOString() : null,
+    trialUntil: row.trialUntil ? new Date(String(row.trialUntil)).toISOString() : null,
     seats: seats.map((seat) => ({
       id: String(seat.id),
       name: String(seat.name),

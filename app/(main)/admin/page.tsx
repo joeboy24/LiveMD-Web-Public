@@ -15,13 +15,13 @@ export default function AdminPricesPage() {
 
 async function Prices() {
   const [prices, discounts] = await Promise.all([readPlanPrices(), readDiscounts()]);
-  const paid = plans.filter((plan) => plan.name !== "Personal");
+  const paid = plans;
   return (
     <div className="grid gap-8">
       <PageIntro
         eyebrow="SYSTEM"
         title="Prices"
-        detail="House and Room include 100 GB. Custom includes 150 GB. Above 100 seats its price is the seat count times the Room price, divided by 100."
+        detail="Personal includes 10 GB. House and Room include 100 GB. Custom includes 150 GB. Above 100 seats its price is the seat count times the Room price, divided by 100."
       />
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {paid.map((plan) => {

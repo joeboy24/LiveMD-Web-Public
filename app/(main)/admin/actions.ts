@@ -9,7 +9,7 @@ export type PriceState = { error: string | null; saved: boolean; stamp: string }
 
 export type DiscountState = { error: string | null; saved: boolean; stamp: string; code: string };
 
-const plans = ["House", "Room"] as const;
+const plans = ["Personal", "House", "Room"] as const;
 
 export async function savePlanPrice(_state: PriceState, formData: FormData): Promise<PriceState> {
   if (!(await readSystemAdmin())) return { error: "The system holds these prices.", saved: false, stamp: "" };
