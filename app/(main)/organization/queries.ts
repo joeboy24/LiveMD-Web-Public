@@ -171,7 +171,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
   const sql = getSql();
   const rows = account
     ? await sql`
-        select organizations.id, organizations.name, organizations.plan
+        select organizations.id, organizations.name, organizations.plan, organizations.plan_until as "planUntil"
         from seats
         join organizations on organizations.id = seats.organization_id
         where seats.account_id = ${account.id}
@@ -179,7 +179,6 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
         limit 1
       `
     : await sql`
-        select id, name, plan
         select id, name, plan, plan_until as "planUntil"
         from organizations
         order by created_at asc

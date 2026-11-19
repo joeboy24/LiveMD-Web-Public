@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { applyPaidPlan, stripeClient, type PlanTerm } from "../../../(main)/organization/billing";
+import { recordPaidSession, stripeClient } from "../../../(main)/organization/billing";
 
 export const runtime = "nodejs";
 
@@ -18,10 +18,7 @@ export async function POST(request: Request) {
   }
 
   const session = paidSession(event);
-  if (session?.metadata) {
-    const term: PlanTerm = session.metadata.term === "quarter" ? "quarter" : "year";
-    await applyPaidPlan(session.metadata.organizationId ?? "", session.metadata.plan ?? "", term);
-  }
+  if (session) await recordPaidSession(session);
   return NextResponse.json({ received: true });
 }
 

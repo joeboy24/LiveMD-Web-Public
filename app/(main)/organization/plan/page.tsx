@@ -1,12 +1,14 @@
 import { Suspense } from "react";
 import { readAccess } from "../../../auth/access";
-import { livePlan, planCharge, readPlanPrices, readSeatAllowance, type PlanPrice } from "../billing";
+import { livePlan, planCharge, readPlanPrices, readSeatAllowance, termOpen, type PlanPrice } from "../billing";
+import { settlePayment } from "./actions";
+import { PaidToast } from "./paid-toast";
 import { PageIntro } from "../chrome";
 import { readOrganization } from "../queries";
 import { planAccent, plans, storageGb } from "../sample";
 import { CustomOffer, PlanButton } from "./choose-plan";
 
-export default function PlanPage({ searchParams }: { searchParams: Promise<{ checkout?: string | string[] }> }) {
+export default function PlanPage({ searchParams }: { searchParams: Promise<{ checkout?: string | string[]; session_id?: string | string[] }> }) {
   return (
     <Suspense fallback={<p className="text-base text-muted">Loading plan.</p>}>
       <PlanBody searchParams={searchParams} />
@@ -14,17 +16,22 @@ export default function PlanPage({ searchParams }: { searchParams: Promise<{ che
   );
 }
 
-async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: string | string[] }> }) {
-  const [organization, access, query, prices] = await Promise.all([readOrganization(), readAccess(), searchParams, readPlanPrices()]);
+async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: string | string[]; session_id?: string | string[] }> }) {
+  const query = await searchParams;
+  const sessionId = Array.isArray(query.session_id) ? query.session_id[0] : query.session_id;
+  if (sessionId) await settlePayment(sessionId);
+  const [organization, access, prices] = await Promise.all([readOrganization(), readAccess(), readPlanPrices()]);
   const current = livePlan(organization?.plan ?? "Personal", organization?.planUntil ?? null);
+  const open = termOpen(organization?.planUntil ?? null);
+  const until = open && organization?.planUntil ? formatTerm(organization.planUntil) : null;
   const used = organization?.seats.length ?? 0;
   const allowance = await readSeatAllowance(current);
   const full = used >= allowance;
   const owner = access.role === "Owner";
   const room = prices.find((item) => item.plan === "Room") ?? null;
   const checkout = Array.isArray(query.checkout) ? query.checkout[0] : query.checkout;
-  const notice =
-    checkout === "received" ? "Payment received. The plan updates when the payment clears." : checkout === "cancelled" ? "The payment was cancelled." : "";
+  const notice = checkout === "cancelled" ? "The payment was cancelled." : "";
+  const paidSession = checkout === "received" && sessionId ? sessionId : null;
   const cards = await Promise.all(
     plans.map(async (plan) => {
       const price = planCharge(prices, plan.name);
@@ -44,11 +51,12 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
         }
       />
       {notice ? <p className="text-[14px] font-semibold text-ink">{notice}</p> : null}
+      <PaidToast sessionId={paidSession} />
       <ul className="grid gap-3 sm:grid-cols-2">
         {cards.map(({ plan, price, seats }) => {
           const selected = plan.name === current;
           const count = seats ?? 101;
-          const intent = owner && count > allowance ? "upgrade" : owner && seats != null && count < allowance ? "choose" : null;
+          const intent = owner && count > allowance ? "upgrade" : owner && !open && seats != null && count < allowance ? "choose" : null;
           const terms = termsFor(price);
           const storage = storageGb(plan.name);
           const accent = planAccent(plan.name);
@@ -80,6 +88,8 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
                   allowance={allowance}
                   selected={selected}
                   used={used}
+                  until={selected ? until : null}
+                  held={open}
                   storage={storage}
                   accent={accent}
                 />
@@ -89,11 +99,7 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
                   <p className="mt-1 text-[12px] font-semibold tracking-[0.14em] text-muted">{count === 1 ? "SEAT" : "SEATS"}</p>
                   <p className="mt-4 text-[14px] leading-6 text-muted">{plan.detail}</p>
                   {price ? <PriceLines price={price} /> : null}
-                  {selected ? (
-                    <p className="mt-5 text-[12px] text-muted">
-                      {used} of {count} {count === 1 ? "seat" : "seats"} in use
-                    </p>
-                  ) : null}
+                  {selected ? <SeatUse used={used} count={count} until={until} /> : null}
                   {intent === "choose" || (intent === "upgrade" && terms.length > 0) ? (
                     <PlanButton plan={plan.name} intent={intent} terms={terms} seats={count} currency={price?.currency ?? "usd"} storage={storage} accent={accent} />
                   ) : null}
@@ -105,11 +111,26 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
       </ul>
       <p className="max-w-xl text-[14px] leading-6 text-muted">
         {owner
-          ? "House and Room include 100 GB. Custom includes 150 GB. The plan runs for the term that was paid."
+          ? until
+            ? `House and Room include 100 GB. Custom includes 150 GB. A smaller plan can be chosen after ${until}.`
+            : "House and Room include 100 GB. Custom includes 150 GB. The plan runs for the term that was paid."
           : "The owner chooses the plan."}
       </p>
     </div>
   );
+}
+
+function SeatUse({ used, count, until }: { used: number; count: number; until: string | null }) {
+  const seats = count === 1 ? "seat" : "seats";
+  return (
+    <p className="mt-5 text-[12px] text-muted">
+      {used} of {count} {seats} in use{until ? ` through ${until}` : ""}
+    </p>
+  );
+}
+
+function formatTerm(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
 function PriceLines({ price }: { price: PlanPrice }) {

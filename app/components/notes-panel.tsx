@@ -44,7 +44,7 @@ export function NotesPanel({
     <aside data-notes="" className="fixed inset-0 z-30 overflow-y-auto bg-background md:static md:z-auto md:h-full md:min-h-0 md:overflow-y-auto md:bg-transparent">
       <div className="m-3 overflow-hidden rounded-2xl bg-surface shadow-[0_18px_40px_rgb(0_0_0/0.18)] ring-1 ring-white/10">
         <div className="h-1 bg-[linear-gradient(90deg,#25C290,#38A7E2,#FA8E23)]" />
-        <div className="flex items-center justify-between gap-2 px-3 pt-3">
+        {feature === "checkout" ? null : <div className="flex items-center justify-between gap-2 px-3 pt-3">
           <p className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.16em] text-muted">
             <button
               type="button"
@@ -66,8 +66,8 @@ export function NotesPanel({
             <FiMessageSquare aria-hidden className="size-3" />
             Contact support
           </button>
-        </div>
-        <HelpNote />
+        </div>}
+        {feature === "checkout" ? null : <HelpNote />}
         {feature === "tasks" ? <TodoList initial={todos} /> : null}
         {feature === "message" ? <MessageSheet groupId={groupId} group={group} recipients={recipients} support={support} /> : null}
         {feature === "notifications" ? <NotificationSheet /> : null}

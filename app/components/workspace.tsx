@@ -20,7 +20,7 @@ export function Workspace({ shows, main, todos }: { shows: ReactNode; main: Reac
   return (
     <div
       className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:[grid-template-columns:300px_minmax(0,3fr)_var(--notes-col)_3.25rem]"
-      style={{ "--notes-col": feature ? "minmax(220px,1fr)" : "0px" } as CSSProperties}
+      style={{ "--notes-col": feature === "checkout" ? "minmax(320px,24rem)" : feature ? "minmax(220px,1fr)" : "0px" } as CSSProperties}
     >
       <aside
         data-help="Shows for this organization. Pick one to arrange it or play it."

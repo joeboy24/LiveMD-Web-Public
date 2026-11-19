@@ -34,6 +34,24 @@ export function messageLetter(orgName: string, group: string, subject: string, b
   };
 }
 
+export function receiptLetter(input: {
+  orgName: string;
+  plan: string;
+  seats: number;
+  term: string;
+  amount: string;
+  discount: string | null;
+  accent: string;
+}): Letter {
+  const seats = input.seats === 1 ? "1 seat" : `${input.seats} seats`;
+  const discount = input.discount ? `Discount ${input.discount}\n` : "";
+  return {
+    subject: `Receipt for ${input.plan}`,
+    text: `Payment received for ${input.orgName}.\n${input.plan}\n${seats}\n${input.term}\n${input.amount}\n${discount}`,
+    html: receiptCard(input, seats),
+  };
+}
+
 export function signInLetter(url: string): Letter {
   return {
     subject: "Sign in to Live MD",
@@ -178,6 +196,83 @@ function messageCard(orgName: string, group: string, subject: string, paragraphs
         </tr>
         <tr>
           <td class="muted" style="padding:16px 4px 0;font-family:${font};font-size:12px;line-height:18px;color:#5C656E;">Sent from Live MD.</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`;
+}
+
+function receiptCard(
+  input: { orgName: string; plan: string; term: string; amount: string; discount: string | null; accent: string },
+  seats: string,
+) {
+  const rows = [
+    ["Plan", input.plan],
+    ["Seats", seats],
+    ["Term", input.term],
+    ...(input.discount ? [["Discount", input.discount]] : []),
+    ["Total", input.amount],
+  ];
+  const body = rows
+    .map(
+      ([label, value]) =>
+        `<tr><td class="muted" style="padding:8px 0;font-size:13px;line-height:18px;color:#5C656E;">${escapeHtml(label)}</td><td class="ink" align="right" style="padding:8px 0;font-size:15px;line-height:20px;font-weight:700;color:#0B1116;">${escapeHtml(value)}</td></tr>`,
+    )
+    .join("");
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Receipt for ${escapeHtml(input.plan)}</title>
+<style>
+  :root { color-scheme: light dark; }
+  a { text-decoration: none; }
+  @media (prefers-color-scheme: dark) {
+    .page { background: #0B1116 !important; background-color: #0B1116 !important; color: #EBEBEA !important; }
+    .card { background: #151D24 !important; background-color: #151D24 !important; }
+    .wordmark { color: #38A7E2 !important; }
+    .muted { color: #9A9DA1 !important; }
+    .ink { color: #EBEBEA !important; }
+  }
+  .theme-dark .page { background: #0B1116 !important; background-color: #0B1116 !important; color: #EBEBEA !important; }
+  .theme-dark .card { background: #151D24 !important; background-color: #151D24 !important; }
+  .theme-dark .wordmark { color: #38A7E2 !important; }
+  .theme-dark .muted { color: #9A9DA1 !important; }
+  .theme-dark .ink { color: #EBEBEA !important; }
+  .theme-light .page { background: #F3F5F7 !important; background-color: #F3F5F7 !important; color: #0B1116 !important; }
+  .theme-light .card { background: #FFFFFF !important; background-color: #FFFFFF !important; }
+  .theme-light .wordmark { color: #076FBF !important; }
+  .theme-light .muted { color: #5C656E !important; }
+  .theme-light .ink { color: #0B1116 !important; }
+</style>
+</head>
+<body class="page" style="margin:0;padding:0;background:#F3F5F7;color:#0B1116;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Payment received for ${escapeHtml(input.plan)}.</div>
+<table role="presentation" class="page" width="100%" cellpadding="0" cellspacing="0" bgcolor="#F3F5F7" style="background:#F3F5F7;">
+  <tr>
+    <td class="page" align="center" bgcolor="#F3F5F7" style="padding:40px 16px;background:#F3F5F7;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+        <tr>
+          <td class="wordmark" style="padding:0 4px 16px;font-family:${font};font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.22em;color:#076FBF;">LIVE MD</td>
+        </tr>
+        <tr>
+          <td height="4" bgcolor="${escapeHtml(input.accent)}" style="height:4px;background:${escapeHtml(input.accent)};border-radius:18px 18px 0 0;font-size:0;line-height:0;">&nbsp;</td>
+        </tr>
+        <tr>
+          <td class="card" bgcolor="#FFFFFF" style="background:#FFFFFF;border-radius:0 0 18px 18px;padding:32px 36px 28px;font-family:${font};">
+            <p class="muted" style="margin:0;font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#5C656E;">Receipt · ${escapeHtml(input.orgName)}</p>
+            <h1 class="ink" style="margin:14px 0 0;font-size:28px;line-height:34px;font-weight:700;letter-spacing:-0.02em;color:#0B1116;">Payment received</h1>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-top:1px solid #E4E9EE;">${body}</table>
+          </td>
+        </tr>
+        <tr>
+          <td class="muted" style="padding:16px 4px 0;font-family:${font};font-size:12px;line-height:18px;color:#5C656E;">This receipt is for your Live MD plan.</td>
         </tr>
       </table>
     </td>

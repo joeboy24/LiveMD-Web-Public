@@ -70,6 +70,8 @@ export function CustomOffer({
   allowance,
   selected,
   used,
+  until,
+  held,
   storage,
   accent,
 }: {
@@ -82,6 +84,8 @@ export function CustomOffer({
   allowance: number;
   selected: boolean;
   used: number;
+  until: string | null;
+  held: boolean;
   storage: number | null;
   accent: string;
 }) {
@@ -92,7 +96,7 @@ export function CustomOffer({
   const quarter = customPriceCents(roomQuarter, typed);
   const year = customPriceCents(roomYear, typed);
   const count = Number.isInteger(typed) && typed > 100 ? typed : Number(saved) > 100 ? Number(saved) : 101;
-  const intent = owner && count > allowance ? "upgrade" : owner && count < allowance ? "choose" : null;
+  const intent = owner && count > allowance ? "upgrade" : owner && !held && count < allowance ? "choose" : null;
   const terms = [
     quarter ? { term: "quarter" as const, label: "3 months", cents: quarter } : null,
     year ? { term: "year" as const, label: "1 year", cents: year } : null,
@@ -180,7 +184,7 @@ export function CustomOffer({
       </div>
       {selected ? (
         <p className="mt-5 text-[12px] text-muted">
-          {used} of {count} {count === 1 ? "seat" : "seats"} in use
+          {used} of {count} {count === 1 ? "seat" : "seats"} in use{until ? ` through ${until}` : ""}
         </p>
       ) : null}
       {intent === "choose" ? (

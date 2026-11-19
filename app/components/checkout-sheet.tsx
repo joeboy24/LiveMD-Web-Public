@@ -1,24 +1,34 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FiCreditCard, FiX } from "react-icons/fi";
-import { buyPlan, readCheckoutDiscount, type CheckoutDiscount, type PlanState } from "../(main)/organization/plan/actions";
+import { buyPlan, readCheckoutDiscount, settlePayment, type CheckoutDiscount, type PlanState } from "../(main)/organization/plan/actions";
 import { orderCents, termTotalCents } from "../(main)/organization/sample";
+import { CardPayment, cardFormReady } from "./card-payment";
+import { PaymentReceived } from "./payment-received";
 import { chooseFeature, type CheckoutDraft } from "./panel";
+import { Toast } from "./toast";
 
-const initial: PlanState = { error: null };
+const initial: PlanState = { error: null, clientSecret: null, lock: "" };
 
 export function CheckoutSheet({ draft }: { draft: CheckoutDraft }) {
+  const router = useRouter();
   const [state, action, pending] = useActionState(buyPlan, initial);
   const [term, setTerm] = useState(draft.terms.find((item) => item.term === "year")?.term ?? draft.terms[0]?.term ?? "year");
   const [code, setCode] = useState("");
   const [discount, setDiscount] = useState<CheckoutDiscount | null>(null);
   const [miss, setMiss] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const choice = draft.terms.find((item) => item.term === term) ?? draft.terms[0];
   const total = choice ? termTotalCents(choice.cents, choice.term) : null;
   const offer = discount?.found ? discount : null;
   const due = total == null ? null : orderCents(total, offer);
+  const lock = `${draft.plan}:${choice?.term ?? ""}:${due ?? ""}:${code}`;
+  const secret = state.clientSecret && state.lock === lock ? state.clientSecret : null;
   const seats = draft.seats === 1 ? "1 seat" : `${draft.seats} seats`;
+  const hold = miss || (code.length > 0 && code.length < 7) || (due != null && due < 50);
 
   useEffect(() => {
     if (code.length !== 7) return;
@@ -33,9 +43,23 @@ export function CheckoutSheet({ draft }: { draft: CheckoutDraft }) {
     };
   }, [code]);
 
+  if (paid) {
+    return (
+      <>
+        <PaymentReceived
+          plan={draft.plan}
+          seats={draft.seats}
+          storage={draft.storage}
+          label={choice?.label ?? ""}
+          onClose={() => chooseFeature("checkout")}
+        />
+        <Toast message={toast} tone="success" onDone={() => setToast(null)} />
+      </>
+    );
+  }
   if (!choice) return null;
   return (
-    <form action={action} className="border-t border-surface-elevated px-3 py-3">
+    <div className="px-3 py-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-semibold tracking-[0.16em] text-muted">CHECKOUT</p>
         <button
@@ -98,20 +122,38 @@ export function CheckoutSheet({ draft }: { draft: CheckoutDraft }) {
         <span className="text-[22px] leading-none font-semibold tracking-tight text-ink tabular-nums">{due == null ? "" : money(due, draft.currency)}</span>
       </div>
       <p className="mt-2 text-[13px] leading-5 text-muted">Covers {choice.label}.</p>
-      <input type="hidden" name="plan" value={draft.plan} />
-      <input type="hidden" name="term" value={choice.term} />
-      <input type="hidden" name="seats" value={String(draft.seats)} />
-      {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
-      <button
-        type="submit"
-        disabled={pending}
-        data-help={`Pay for ${draft.plan} for ${choice.label}.`}
-        className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-[13px] font-semibold text-white outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover disabled:opacity-50"
-      >
-        <FiCreditCard aria-hidden className="size-3.5" />
-        <span>{pending ? "Opening" : "Pay"}</span>
-      </button>
-    </form>
+      {!cardFormReady() ? (
+        <p className="mt-4 text-sm text-[#e4372d]">Add the publishable key to show the card form.</p>
+      ) : secret ? (
+        <CardPayment
+          clientSecret={secret}
+          onPaid={() => {
+            setPaid(true);
+            setToast("Payment successful.");
+            const sessionId = state.sessionId;
+            if (!sessionId) return;
+            void settlePayment(sessionId).then(() => router.refresh());
+          }}
+        />
+      ) : (
+        <form action={action}>
+          <input type="hidden" name="plan" value={draft.plan} />
+          <input type="hidden" name="term" value={choice.term} />
+          <input type="hidden" name="seats" value={String(draft.seats)} />
+          <input type="hidden" name="discount" value={code} />
+          {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
+          <button
+            type="submit"
+            disabled={pending || hold}
+            data-help={`Pay for ${draft.plan} for ${choice.label}.`}
+            className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-[13px] font-semibold text-white outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary-hover disabled:opacity-50"
+          >
+            <FiCreditCard aria-hidden className="size-3.5" />
+            <span>{pending ? "Opening" : "Pay"}</span>
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
 

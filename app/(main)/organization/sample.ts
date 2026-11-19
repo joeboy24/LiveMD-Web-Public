@@ -100,9 +100,9 @@ export function storageGb(plan: string) {
 
 const planAccents: Record<string, string> = {
   Personal: "#076FBF",
-  House: "#6A4CFF",
-  Room: "#25C290",
-  Custom: "#FA8E23",
+  House: "#25C290",
+  Room: "#FA8E23",
+  Custom: "#6A4CFF",
 };
 
 export function planAccent(plan: string) {

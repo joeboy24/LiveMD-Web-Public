@@ -1,15 +1,15 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { readAccess } from "../../../auth/access";
 import { appOrigin } from "../../../auth/mail";
 import { readSessionAccount } from "../../../auth/queries";
-import { applySmallerPlan, isPaidPlan, livePlan, paymentsConfigured, readDiscounts, readPlanPrice, readSeatAllowance, stripeClient, writeCustomSeats, type PlanTerm } from "../billing";
+import { getSql } from "../../../db";
+import { applySmallerPlan, isPaidPlan, livePlan, paymentsConfigured, readDiscounts, readPlanPrice, readSeatAllowance, recordPaidSession, stripeClient, termOpen, writeCustomSeats, type PlanTerm } from "../billing";
 import { orderCents, termTotalCents, type OrderDiscount } from "../sample";
 import { readOrganization } from "../queries";
 import { plans } from "../sample";
 
-export type PlanState = { error: string | null };
+export type PlanState = { error: string | null; clientSecret?: string | null; lock?: string; sessionId?: string };
 
 export async function buyPlan(_state: PlanState, formData: FormData): Promise<PlanState> {
   const access = await readAccess();
@@ -41,10 +41,15 @@ export async function buyPlan(_state: PlanState, formData: FormData): Promise<Pl
   const account = await readSessionAccount();
   const origin = await appOrigin();
   const label = term === "quarter" ? "3 months" : "1 year";
-  let url = "";
+  const seats = plan === "Custom" ? (priced.seats ?? 0) : await readSeatAllowance(plan);
+  const lock = `${plan}:${term}:${charge}:${discount.code}`;
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      ui_mode: "elements",
+      managed_payments: { enabled: false },
+      allowed_payment_method_types: ["card"],
+      return_url: `${origin}/organization/plan?checkout=received&session_id={CHECKOUT_SESSION_ID}`,
       line_items: [
         {
           quantity: 1,
@@ -55,18 +60,40 @@ export async function buyPlan(_state: PlanState, formData: FormData): Promise<Pl
           },
         },
       ],
-      success_url: `${origin}/organization/plan?checkout=received`,
-      cancel_url: `${origin}/organization/plan?checkout=cancelled`,
-      customer_email: account?.email,
-      metadata: { organizationId: organization.id, plan, term, ...(discount.offer ? { discount: discount.code } : {}) },
+      ...(account?.email ? { customer_email: account.email } : {}),
+      metadata: { organizationId: organization.id, plan, term, seats: String(seats), ...(discount.offer ? { discount: discount.code } : {}) },
     });
-    url = session.url ?? "";
+    if (!session.client_secret) return { error: "The card form did not open.", clientSecret: null, lock: "", sessionId: "" };
+    return { error: null, clientSecret: session.client_secret, lock, sessionId: session.id };
   } catch {
-    return { error: "The payment page did not open." };
+    return { error: "The card form did not open.", clientSecret: null, lock: "" };
   }
-  if (!url) return { error: "The payment page did not open." };
-  redirect(url);
-  return { error: null };
+}
+
+export async function settlePayment(sessionId: string) {
+  const access = await readAccess();
+  if (access.role !== "Owner" || !/^cs_(?:test|live)_[A-Za-z0-9]+$/.test(sessionId)) return;
+  const account = await readSessionAccount();
+  const stripe = stripeClient();
+  if (!account || !stripe) return;
+  const sql = getSql();
+  const rows = await sql`
+    select organizations.id
+    from seats
+    join organizations on organizations.id = seats.organization_id
+    where seats.account_id = ${account.id}
+    order by seats.created_at asc
+    limit 1
+  `;
+  const organizationId = rows[0]?.id ? String(rows[0].id) : "";
+  if (!organizationId) return;
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.metadata?.organizationId !== organizationId) return;
+    await recordPaidSession(session);
+  } catch {
+    return;
+  }
 }
 
 export async function choosePlan(_state: PlanState, formData: FormData): Promise<PlanState> {
@@ -77,6 +104,7 @@ export async function choosePlan(_state: PlanState, formData: FormData): Promise
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
   const current = livePlan(organization.plan, organization.planUntil);
+  if (termOpen(organization.planUntil)) return { error: "A smaller plan opens when this one ends." };
   if ((await readSeatAllowance(plan)) >= (await readSeatAllowance(current))) return { error: "That plan is already in place." };
   const saved = await applySmallerPlan(organization.id, plan);
   if (!saved) return { error: "That plan is already in place." };

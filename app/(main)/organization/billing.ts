@@ -1,7 +1,9 @@
 import { revalidatePath } from "next/cache";
 import Stripe from "stripe";
+import { receiptLetter } from "../../auth/letter";
+import { sendMail } from "../../auth/mail";
 import { getSql } from "../../db";
-import { customPriceCents, plans, seatLimit, storageGb } from "./sample";
+import { customPriceCents, planAccent, plans, seatLimit, storageGb } from "./sample";
 
 const paidPlans = ["House", "Room", "Custom"] as const;
 
@@ -24,6 +26,10 @@ export type PlanPrice = {
 export function livePlan(plan: string, planUntil: string | null) {
   if (!planUntil || new Date(planUntil).getTime() > Date.now()) return plan;
   return "Personal";
+}
+
+export function termOpen(planUntil: string | null) {
+  return Boolean(planUntil && new Date(planUntil).getTime() > Date.now());
 }
 
 export async function readSeatAllowance(plan: string) {
@@ -73,6 +79,23 @@ async function preparePlanPrices() {
       created_at timestamptz not null default now()
     )`,
   );
+  await sql.query(
+    `create table if not exists payments (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null,
+      stripe_session_id text not null unique,
+      plan text not null,
+      term text not null,
+      seats integer not null,
+      amount_cents integer not null,
+      currency text not null default 'usd',
+      discount text,
+      email text,
+      receipt_sent boolean not null default false,
+      paid_at timestamptz not null default now()
+    )`,
+  );
+  await sql.query(`create index if not exists payments_organization on payments (organization_id, paid_at desc)`);
 }
 
 export async function readPlanPrices() {
@@ -194,6 +217,79 @@ export async function applyPaidPlan(organizationId: string, plan: string, term: 
   await writePlan(organizationId, plan, "up", term);
 }
 
+export async function recordPaidSession(session: Stripe.Checkout.Session) {
+  if (session.payment_status !== "paid") return;
+  const organizationId = session.metadata?.organizationId ?? "";
+  const plan = session.metadata?.plan ?? "";
+  const term: PlanTerm = session.metadata?.term === "quarter" ? "quarter" : "year";
+  const amount = session.amount_total;
+  if (!isPaidPlan(plan) || !isId(organizationId) || !session.id || !Number.isInteger(amount) || amount == null || amount < 50) return;
+  const metaSeats = Number(session.metadata?.seats);
+  const seats = Number.isInteger(metaSeats) && metaSeats > 0 ? metaSeats : await readSeatAllowance(plan);
+  const email = session.customer_details?.email || session.customer_email || null;
+  const discount = session.metadata?.discount || null;
+  const currency = session.currency || "usd";
+  await ensurePlanPrices();
+  const sql = getSql();
+  await sql`
+    insert into payments (organization_id, stripe_session_id, plan, term, seats, amount_cents, currency, discount, email)
+    values (${organizationId}, ${session.id}, ${plan}, ${term}, ${seats}, ${amount}, ${currency}, ${discount}, ${email})
+    on conflict (stripe_session_id) do nothing
+  `;
+  await applyPaidPlan(organizationId, plan, term);
+  if (!email) return;
+  const claimed = await sql`
+    update payments set receipt_sent = true
+    where stripe_session_id = ${session.id} and receipt_sent = false
+    returning id
+  `;
+  if (claimed.length === 0) return;
+  const sent = await sendReceipt({ organizationId, plan, seats, term, amount, currency, discount, email });
+  if (!sent) await sql`update payments set receipt_sent = false where stripe_session_id = ${session.id}`;
+}
+
+async function sendReceipt(input: {
+  organizationId: string;
+  plan: string;
+  seats: number;
+  term: PlanTerm;
+  amount: number;
+  currency: string;
+  discount: string | null;
+  email: string;
+}) {
+  const sql = getSql();
+  const rows = await sql`select name from organizations where id = ${input.organizationId} limit 1`;
+  const orgName = rows[0]?.name ? String(rows[0].name) : "Live MD";
+  const letter = receiptLetter({
+    orgName,
+    plan: input.plan,
+    seats: input.seats,
+    term: input.term === "quarter" ? "3 months" : "1 year",
+    amount: receiptMoney(input.amount, input.currency),
+    discount: await discountLabel(input.discount, input.currency),
+    accent: planAccent(input.plan),
+  });
+  const result = await sendMail(input.email, letter.subject, letter.text, letter.html);
+  return !result.error;
+}
+
+function receiptMoney(cents: number, currency: string) {
+  const amount = cents / 100;
+  const value = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  if (currency.toLowerCase() === "usd") return `$${value}`;
+  return `${value} ${currency.toUpperCase()}`;
+}
+
+async function discountLabel(code: string | null, currency: string) {
+  if (!code) return null;
+  const match = (await readDiscounts()).find((item) => item.code === code);
+  if (!match) return null;
+  if (match.kind === "percent" && match.percent) return `${match.percent}%`;
+  if (match.kind === "amount" && match.amountCents) return receiptMoney(match.amountCents, currency);
+  return null;
+}
+
 export async function applySmallerPlan(organizationId: string, plan: string) {
   if (!isId(organizationId) || !plans.some((item) => item.name === plan)) return false;
   return writePlan(organizationId, plan, "down");
@@ -209,6 +305,7 @@ async function writePlan(organizationId: string, plan: string, direction: "up" |
   const next = await readSeatAllowance(plan);
   const now = await readSeatAllowance(current);
   if (!current || (direction === "up" ? next <= now : next >= now || next < 1)) return false;
+  if (direction === "down" && termOpen(until)) return false;
   if (direction === "down") {
     await sql`update organizations set plan = ${plan}, plan_until = null where id = ${organizationId}`;
   } else if (term === "quarter") {
