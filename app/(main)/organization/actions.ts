@@ -7,7 +7,8 @@ import { appOrigin, mailConfigured, sendInvitation } from "../../auth/mail";
 import { createSignInLink, dropSignInLink, readSessionAccount } from "../../auth/queries";
 import { getSql } from "../../db";
 import { readOrganization } from "./queries";
-import { roles, seatLimit } from "./sample";
+import { livePlan, readSeatAllowance } from "./billing";
+import { roles } from "./sample";
 
 export type OrganizationState = {
   error: string | null;

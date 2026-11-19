@@ -2,9 +2,10 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { FiMessageSquare, FiX } from "react-icons/fi";
+import { CheckoutSheet } from "./checkout-sheet";
 import { MessageSheet } from "./message-sheet";
 import { NotificationSheet } from "./notification-sheet";
-import { chooseFeature, openSupport, type MessageSeat, type SideFeature } from "./panel";
+import { chooseFeature, openSupport, type CheckoutDraft, type MessageSeat, type SideFeature } from "./panel";
 import { TodoList } from "./todo-list";
 import type { TodoItem } from "../(main)/organization/queries";
 
@@ -29,6 +30,7 @@ export function NotesPanel({
   group,
   recipients,
   support,
+  checkout,
 }: {
   feature: SideFeature;
   todos: TodoItem[];
@@ -36,6 +38,7 @@ export function NotesPanel({
   group: string | null;
   recipients: MessageSeat[];
   support: boolean;
+  checkout: CheckoutDraft | null;
 }) {
   return (
     <aside data-notes="" className="fixed inset-0 z-30 overflow-y-auto bg-background md:static md:z-auto md:h-full md:min-h-0 md:overflow-y-auto md:bg-transparent">
@@ -68,6 +71,7 @@ export function NotesPanel({
         {feature === "tasks" ? <TodoList initial={todos} /> : null}
         {feature === "message" ? <MessageSheet groupId={groupId} group={group} recipients={recipients} support={support} /> : null}
         {feature === "notifications" ? <NotificationSheet /> : null}
+        {feature === "checkout" && checkout ? <CheckoutSheet key={checkout.plan} draft={checkout} /> : null}
       </div>
     </aside>
   );

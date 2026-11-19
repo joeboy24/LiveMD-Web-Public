@@ -2,7 +2,17 @@ create table if not exists organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   plan text not null default 'Personal',
+  plan_until timestamptz,
   created_at timestamptz not null default now()
+);
+
+create table if not exists plan_prices (
+  plan text primary key,
+  amount_cents integer,
+  quarter_cents integer,
+  year_cents integer,
+  seats integer,
+  currency text not null default 'usd'
 );
 
 create table if not exists seats (
@@ -27,6 +37,11 @@ create table if not exists accounts (
 
 create unique index if not exists accounts_email
   on accounts (lower(email));
+
+create table if not exists system_admins (
+  account_id uuid primary key references accounts (id),
+  created_at timestamptz not null default now()
+);
 
 create table if not exists sessions (
   id uuid primary key default gen_random_uuid(),

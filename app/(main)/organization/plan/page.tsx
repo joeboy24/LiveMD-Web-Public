@@ -1,22 +1,37 @@
 import { Suspense } from "react";
+import { readAccess } from "../../../auth/access";
+import { livePlan, planCharge, readPlanPrices, readSeatAllowance, type PlanPrice } from "../billing";
 import { PageIntro } from "../chrome";
 import { readOrganization } from "../queries";
-import { plans, seatLimit } from "../sample";
+import { planAccent, plans, storageGb } from "../sample";
+import { CustomOffer, PlanButton } from "./choose-plan";
 
-export default function PlanPage() {
+export default function PlanPage({ searchParams }: { searchParams: Promise<{ checkout?: string | string[] }> }) {
   return (
     <Suspense fallback={<p className="text-base text-muted">Loading plan.</p>}>
-      <PlanBody />
+      <PlanBody searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function PlanBody() {
-  const organization = await readOrganization();
-  const current = organization?.plan ?? "Personal";
+async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: string | string[] }> }) {
+  const [organization, access, query, prices] = await Promise.all([readOrganization(), readAccess(), searchParams, readPlanPrices()]);
+  const current = livePlan(organization?.plan ?? "Personal", organization?.planUntil ?? null);
   const used = organization?.seats.length ?? 0;
-  const allowance = seatLimit(current);
+  const allowance = await readSeatAllowance(current);
   const full = used >= allowance;
+  const owner = access.role === "Owner";
+  const room = prices.find((item) => item.plan === "Room") ?? null;
+  const checkout = Array.isArray(query.checkout) ? query.checkout[0] : query.checkout;
+  const notice =
+    checkout === "received" ? "Payment received. The plan updates when the payment clears." : checkout === "cancelled" ? "The payment was cancelled." : "";
+  const cards = await Promise.all(
+    plans.map(async (plan) => {
+      const price = planCharge(prices, plan.name);
+      const seats = plan.name === "Custom" ? price?.seats ?? null : await readSeatAllowance(plan.name);
+      return { plan, price, seats };
+    }),
+  );
   return (
     <div className="grid gap-8">
       <PageIntro
@@ -25,31 +40,106 @@ async function PlanBody() {
         detail={
           full
             ? `${current} includes ${allowance === 1 ? "1 seat" : `${allowance} seats`}. Another seat needs a larger plan.`
-            : "A personal copy is one seat. An organization can hold a block of 50 or 100."
+            : "A personal copy is one seat. House and Room hold 50 and 100 seats. Custom starts above 100."
         }
       />
-      <ul className="grid gap-3 md:grid-cols-3">
-        {plans.map((plan) => {
+      {notice ? <p className="text-[14px] font-semibold text-ink">{notice}</p> : null}
+      <ul className="grid gap-3 sm:grid-cols-2">
+        {cards.map(({ plan, price, seats }) => {
           const selected = plan.name === current;
+          const count = seats ?? 101;
+          const intent = owner && count > allowance ? "upgrade" : owner && seats != null && count < allowance ? "choose" : null;
+          const terms = termsFor(price);
+          const storage = storageGb(plan.name);
+          const accent = planAccent(plan.name);
           return (
-            <li key={plan.name} className={selected ? "flex flex-col rounded-2xl bg-surface p-5 ring-2 ring-primary" : "flex flex-col rounded-2xl bg-surface p-5"}>
+            <li key={plan.name} className="flex flex-col rounded-2xl bg-surface p-5" style={selected ? { boxShadow: `0 0 0 2px ${accent}` } : undefined}>
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-[15px] font-semibold text-ink">{plan.name}</h2>
-                {selected ? <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white">Current</span> : null}
+                <div className="flex items-center gap-2">
+                  {storage ? (
+                    <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white" style={{ background: accent }}>
+                      {storage} GB
+                    </span>
+                  ) : null}
+                  {selected ? (
+                    <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white" style={{ background: accent }}>
+                      Current
+                    </span>
+                  ) : null}
+                </div>
               </div>
-              <p className="mt-4 text-[36px] leading-none font-bold tracking-tight text-ink">{plan.seats}</p>
-              <p className="mt-1 text-[12px] font-semibold tracking-[0.14em] text-muted">{plan.seats === 1 ? "SEAT" : "SEATS"}</p>
-              <p className="mt-4 text-[14px] leading-6 text-muted">{plan.detail}</p>
-              {selected ? (
-                <p className="mt-5 text-[12px] text-muted">
-                  {used} of {plan.seats} {plan.seats === 1 ? "seat" : "seats"} in use
-                </p>
-              ) : null}
+              {plan.name === "Custom" ? (
+                <CustomOffer
+                  saved={price?.seats ? String(price.seats) : ""}
+                  roomQuarter={room?.quarterCents ?? null}
+                  roomYear={room?.yearCents ?? null}
+                  currency={room?.currency ?? price?.currency ?? "usd"}
+                  detail={plan.detail}
+                  owner={owner}
+                  allowance={allowance}
+                  selected={selected}
+                  used={used}
+                  storage={storage}
+                  accent={accent}
+                />
+              ) : (
+                <>
+                  <p className="mt-4 text-[36px] leading-none font-bold tracking-tight text-ink">{seats ?? "100+"}</p>
+                  <p className="mt-1 text-[12px] font-semibold tracking-[0.14em] text-muted">{count === 1 ? "SEAT" : "SEATS"}</p>
+                  <p className="mt-4 text-[14px] leading-6 text-muted">{plan.detail}</p>
+                  {price ? <PriceLines price={price} /> : null}
+                  {selected ? (
+                    <p className="mt-5 text-[12px] text-muted">
+                      {used} of {count} {count === 1 ? "seat" : "seats"} in use
+                    </p>
+                  ) : null}
+                  {intent === "choose" || (intent === "upgrade" && terms.length > 0) ? (
+                    <PlanButton plan={plan.name} intent={intent} terms={terms} seats={count} currency={price?.currency ?? "usd"} storage={storage} accent={accent} />
+                  ) : null}
+                </>
+              )}
             </li>
           );
         })}
       </ul>
-      <p className="max-w-xl text-[14px] leading-6 text-muted">House and Room are the larger plans. A card is not charged on this page yet.</p>
+      <p className="max-w-xl text-[14px] leading-6 text-muted">
+        {owner
+          ? "House and Room include 100 GB. Custom includes 150 GB. The plan runs for the term that was paid."
+          : "The owner chooses the plan."}
+      </p>
     </div>
   );
+}
+
+function PriceLines({ price }: { price: PlanPrice }) {
+  const lines = [
+    price.quarterCents ? `${formatPrice(price.quarterCents, price.currency)}/m for 3 months` : "",
+    price.yearCents ? `${formatPrice(price.yearCents, price.currency)}/m for 1 year` : "",
+  ].filter(Boolean);
+  if (lines.length === 0) return null;
+  return (
+    <div className="mt-3 grid gap-1">
+      {lines.map((line) => (
+        <p key={line} className="text-[13px] leading-5 text-muted">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function termsFor(price: PlanPrice | null) {
+  if (!price) return [];
+  const terms: { term: "quarter" | "year"; label: string; cents: number }[] = [];
+  if (price.quarterCents) terms.push({ term: "quarter", label: "3 months", cents: price.quarterCents });
+  if (price.yearCents) terms.push({ term: "year", label: "1 year", cents: price.yearCents });
+  return terms;
+}
+
+function formatPrice(cents: number, currency: string) {
+  const amount = cents / 100;
+  const value = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  if (currency.toLowerCase() === "usd") return `$${value}`;
+  return `${value} ${currency.toUpperCase()}`;
 }

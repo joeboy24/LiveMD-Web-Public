@@ -51,8 +51,43 @@ export const plans = [
     detail: "One hundred seats for the organization.",
     sample: false,
   },
+  {
+    name: "Custom",
+    seats: 101,
+    detail: "More than one hundred seats.",
+    sample: false,
+  },
 ] as const;
 
 export function seatLimit(plan: string) {
   return plans.find((item) => item.name === plan)?.seats ?? 1;
+}
+
+export function termTotalCents(monthlyCents: number | null, term: "quarter" | "year") {
+  if (monthlyCents == null) return null;
+  return monthlyCents * (term === "quarter" ? 3 : 12);
+}
+
+export function customPriceCents(roomCents: number | null, customSeats: number) {
+  if (roomCents == null) return null;
+  const roomSeats = seatLimit("Room");
+  if (!(Number.isInteger(customSeats) && customSeats > roomSeats) || roomSeats < 1) return roomCents;
+  return Math.round((customSeats * roomCents) / roomSeats);
+}
+
+export function storageGb(plan: string) {
+  if (plan === "Custom") return 150;
+  if (plan === "House" || plan === "Room") return 100;
+  return null;
+}
+
+const planAccents: Record<string, string> = {
+  Personal: "#076FBF",
+  House: "#6A4CFF",
+  Room: "#25C290",
+  Custom: "#FA8E23",
+};
+
+export function planAccent(plan: string) {
+  return planAccents[plan] ?? "#076FBF";
 }

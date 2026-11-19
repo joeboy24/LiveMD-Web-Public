@@ -41,7 +41,7 @@ export function Workspace({ shows, main, todos }: { shows: ReactNode; main: Reac
         {main}
       </main>
       {feature ? (
-        <NotesPanel feature={feature} todos={todos} groupId={panel.groupId} group={panel.group} recipients={panel.recipients} support={panel.support} />
+        <NotesPanel feature={feature} todos={todos} groupId={panel.groupId} group={panel.group} recipients={panel.recipients} support={panel.support} checkout={panel.checkout} />
       ) : (
         <div className="hidden md:block" />
       )}

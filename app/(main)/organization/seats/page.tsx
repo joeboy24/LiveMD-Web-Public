@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ListRow } from "../../../components/list-row";
 import { Monogram, PageIntro, SampleMark } from "../chrome";
-import { sampleSeats, seatLimit } from "../sample";
+import { livePlan, readSeatAllowance } from "../billing";
+import { sampleSeats } from "../sample";
 import { SeatBoard } from "../seat-board";
 import { readOrganization } from "../queries";
 

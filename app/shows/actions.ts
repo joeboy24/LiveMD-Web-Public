@@ -5,6 +5,7 @@ import { denied } from "../auth/access";
 import { getSql } from "../db";
 import { storedMix } from "./mix";
 import { storedStage, storedTempo } from "./stage";
+import { livePlan, storageBytes } from "../(main)/organization/billing";
 import { notifyPublishedShow } from "../(main)/organization/notify";
 import { readOrganization } from "../(main)/organization/queries";
 import { roles } from "../(main)/organization/sample";
@@ -336,7 +337,31 @@ export async function signUpload(input: { showId: string; fileName: string; cont
   const block = await denied("prepare");
   if (block) return { error: block };
   if (!(await showIsOpen(input.showId))) return { error: "This show is limited to another group or role." };
+  const room = await audioRoom(input.showId, Number(input.size));
+  if (room) return { error: room };
   return signAudioUpload(input.showId, input.fileName, input.contentType, Number(input.size));
+}
+
+async function audioRoom(showId: string, incoming: number) {
+  const sql = getSql();
+  const rows = await sql`
+    select organizations.id, organizations.plan, organizations.plan_until as "planUntil"
+    from shows
+    join organizations on organizations.id = shows.organization_id
+    where shows.id = ${showId}
+    limit 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  const plan = livePlan(String(row.plan ?? "Personal"), row.planUntil ? new Date(String(row.planUntil)).toISOString() : null);
+  const cap = storageBytes(plan);
+  const label = storageGb(plan);
+  if (cap == null || label == null) return null;
+  const shows = await sql`select id from shows where organization_id = ${row.id}`;
+  const used = await storedAudioBytes(shows.map((show) => `shows/${show.id}/`));
+  if (used == null) return "Audio storage isn't set up yet.";
+  if (used + incoming > cap) return `This plan holds ${label} GB of audio.`;
+  return null;
 }
 
 export async function readAudio(showId: string, key: string) {

@@ -15,6 +15,7 @@ export type OrganizationRecord = {
   id: string;
   name: string;
   plan: string;
+  planUntil: string | null;
   seats: SeatRecord[];
 };
 
@@ -39,6 +40,7 @@ async function migrate() {
     )
   `;
   await sql`alter table organizations add column if not exists plan text not null default 'Personal'`;
+  await sql`alter table organizations add column if not exists plan_until timestamptz`;
   await sql`
     create table if not exists seats (
       id uuid primary key default gen_random_uuid(),
@@ -178,6 +180,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
       `
     : await sql`
         select id, name, plan
+        select id, name, plan, plan_until as "planUntil"
         from organizations
         order by created_at asc
         limit 1
@@ -195,6 +198,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
     id,
     name: String(row.name),
     plan: String(row.plan ?? "Personal"),
+    planUntil: row.planUntil ? new Date(String(row.planUntil)).toISOString() : null,
     seats: seats.map((seat) => ({
       id: String(seat.id),
       name: String(seat.name),

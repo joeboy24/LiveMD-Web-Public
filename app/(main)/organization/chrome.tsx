@@ -55,7 +55,7 @@ const areas = [
   { href: "/organization/seats", title: "Seats", detail: "The people who can open the player." },
   { href: "/organization/groups", title: "Groups", detail: "Gather seats to message them, or to limit a show." },
   { href: "/organization/roles", title: "Roles", detail: "Owner, music director, musician, and playback operator." },
-  { href: "/organization/plan", title: "Plan", detail: "A personal copy, or a block of 50 or 100 seats." },
+  { href: "/organization/plan", title: "Plan", detail: "One seat, 50, 100, or a custom block above 100." },
 ] as const;
 
 export function AreaLinks() {

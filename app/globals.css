@@ -12,6 +12,9 @@
   --ink: #ebebea;
   --muted: #9a9da1;
   --disabled: #595c60;
+  --plan-button: #e4e9ee;
+  --plan-button-ink: #0b1116;
+  --plan-button-hover: #f3f5f7;
 }
 
 [data-theme="light"] {
@@ -25,6 +28,9 @@
   --ink: #0b1116;
   --muted: #5c656e;
   --disabled: #9a9da1;
+  --plan-button: #25313c;
+  --plan-button-ink: #ebebea;
+  --plan-button-hover: #151d24;
 }
 
 @theme inline {
@@ -37,6 +43,9 @@
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-disabled: var(--disabled);
+  --color-plan-button: var(--plan-button);
+  --color-plan-button-ink: var(--plan-button-ink);
+  --color-plan-button-hover: var(--plan-button-hover);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
