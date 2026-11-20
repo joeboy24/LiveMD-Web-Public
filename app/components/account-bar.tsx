@@ -70,7 +70,7 @@ export function AccountBar({
 
 function OrganizationMenu({ name, onClose }: { name: ReactNode; onClose: () => void }) {
   return (
-    <div role="menu" className="absolute right-0 top-11 z-20 w-64 overflow-hidden rounded-2xl bg-surface-elevated shadow-[0_16px_40px_rgb(0_0_0/0.4)]">
+    <div role="menu" className="absolute right-0 top-11 z-[70] w-64 overflow-hidden rounded-2xl bg-surface-elevated shadow-[0_16px_40px_rgb(0_0_0/0.4)]">
       <div className="flex items-center justify-between px-4 py-3">
         <p className="text-[11px] font-semibold tracking-[0.14em] text-muted">ORGANIZATIONS</p>
       </div>
@@ -100,7 +100,7 @@ function ProfileMenu({
   const title = account ? account.name ?? account.email : "Account";
   const detail = account ? (role ? (account.name ? `${role} · ${account.email}` : role) : "Signed in") : "Sign in to take a seat.";
   return (
-    <div role="menu" className="absolute right-0 top-11 z-20 w-72 overflow-hidden rounded-2xl bg-surface-elevated shadow-[0_16px_40px_rgb(0_0_0/0.4)]">
+    <div role="menu" className="absolute right-0 top-11 z-[70] w-72 overflow-hidden rounded-2xl bg-surface-elevated shadow-[0_16px_40px_rgb(0_0_0/0.4)]">
       <div className="flex items-center gap-3 px-4 py-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-full bg-background text-ink">
           <FiUser aria-hidden className="size-4" />

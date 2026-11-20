@@ -72,7 +72,7 @@ function AccountShell({
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center justify-between border-b border-surface-elevated bg-surface px-4 py-3.5">
+      <header className="relative z-[60] flex items-center justify-between border-b border-surface-elevated bg-surface px-4 py-3.5">
         <span className="text-lg font-bold tracking-tight text-ink">
           Live<span className="pl-0.5 text-primary-hover">MD</span>
         </span>
@@ -86,7 +86,7 @@ function AccountShell({
 function PlayerSeat() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center justify-between border-b border-surface-elevated bg-surface px-4 py-3.5">
+      <header className="relative z-[60] flex items-center justify-between border-b border-surface-elevated bg-surface px-4 py-3.5">
         <span className="text-lg font-bold tracking-tight text-ink">
           Live<span className="pl-0.5 text-primary-hover">MD</span>
         </span>

@@ -51,7 +51,7 @@ function HeaderFrame({
   }, [pathname]);
 
   return (
-    <header className="border-b border-surface-elevated bg-surface">
+    <header className="relative z-[60] border-b border-surface-elevated bg-surface">
       <div className="flex w-full items-center gap-3 py-3 pr-4 pl-4 md:gap-5 md:py-3.5">
         <button
           type="button"

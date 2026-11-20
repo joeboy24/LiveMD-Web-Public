@@ -1059,6 +1059,12 @@ export function Arrangement({
   const shownSection = sectionAtBar(stored(sections), shownBar);
   const canAddTrack = layerList.filter((layer) => !layer.main && !layer.guide).length < 1;
   const canAddGuide = !layerList.some((layer) => layer.guide);
+  const pages = [
+    ["tracks", "Tracks", "#38A7E2", "The stems, the guide, and the wave."],
+    ["sections", "Sections", "#25C290", "Name the sections and set where each one starts."],
+    ["cues", "Cues", "#FA8E23", "Spoken cues on the wave."],
+  ] as const;
+  const pageColor = pages.find((page) => page[0] === segment)?.[2] ?? "#38A7E2";
   const preparing = progress !== null && !playing && addingAudio === null;
   const percent = progress === null ? 0 : Math.round(Math.min(Math.max(progress, 0), 1) * 100);
 
@@ -1133,14 +1139,28 @@ export function Arrangement({
         </div>
       </div>
 
-      <div className="mt-3 flex shrink-0 items-center gap-3">
-        <p className="min-w-0 truncate">
-          <span className="text-[22px] font-semibold text-ink tabular-nums">{shownBar}</span>
-          <span className="ml-2 text-[13px] font-medium text-muted">
+      <div className="mt-3 flex shrink-0 items-end gap-3">
+        <div className="inline-flex shrink-0 items-end">
+          {pages.map(([item, label, color, help], index) => (
+            <button
+              key={item}
+              type="button"
+              data-help={help}
+              onClick={() => setSegment(item)}
+              className={`rounded-t-md px-3.5 text-[12px] font-semibold tracking-wide text-[#1A242C] outline-none transition-[height] duration-200 focus-visible:ring-2 focus-visible:ring-primary-hover ${index > 0 ? "-ml-1.5" : ""} ${segment === item ? "z-10 h-10" : "h-8 opacity-80 hover:opacity-100"}`}
+              style={{ backgroundColor: color }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mb-2 min-w-0 shrink truncate text-xs">
+          <span className="font-semibold text-ink tabular-nums">{shownBar}</span>
+          <span className="ml-2 font-medium text-muted">
             of {totalBars} · {shownSection}
           </span>
         </p>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="mb-2 ml-auto flex shrink-0 items-center gap-2">
           <label className="relative block max-w-[200px]">
             <select
               aria-label="Setlist songs"
@@ -1195,26 +1215,9 @@ export function Arrangement({
           </button>
         </div>
       </div>
+      <div className="h-px w-full" style={{ backgroundColor: pageColor }} />
 
       {progress !== null ? <ReadyBar percent={percent} /> : null}
-
-      <div className="mt-4 grid shrink-0 grid-cols-3 gap-2">
-        {(["tracks", "sections", "cues"] as const).map((item) => (
-          <button
-            key={item}
-            type="button"
-            data-help={item === "tracks" ? "The stems, the guide, and the wave." : item === "sections" ? "Name the sections and set where each one starts." : "Spoken cues on the wave."}
-            onClick={() => setSegment(item)}
-            className={
-              segment === item
-                ? "h-8 rounded-[10px] bg-primary text-[13px] font-semibold text-white"
-                : "h-8 rounded-[10px] bg-surface text-[13px] font-semibold text-muted"
-            }
-          >
-            {item === "tracks" ? "Tracks" : item === "sections" ? "Sections" : "Cues"}
-          </button>
-        ))}
-      </div>
 
       {segment === "tracks" ? (
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">

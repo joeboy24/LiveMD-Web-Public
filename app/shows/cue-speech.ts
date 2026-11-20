@@ -10,7 +10,7 @@ import { readCueAudio, writeCueAudio } from "./storage";
 import type { SongCue } from "./types";
 
 const cueWordCap = 100;
-const voiceName = "en-US-Chirp3-HD-Charon";
+const voiceName = "en-US-Chirp3-HD-Aoede";
 
 type Spoken = { body: Buffer; contentType: string };
 type SpeechResult = Spoken | "unconfigured" | "failed";
@@ -168,18 +168,18 @@ function wordCount(texts: Set<string>) {
 
 async function synthesize(text: string): Promise<SpeechResult> {
   const key = process.env.GOOGLE_TTS_API_KEY;
-  if (key) return googleVoice(text, key);
+  if (key) return googleVoice(text, key, voiceName);
   return macVoice(text);
 }
 
-async function googleVoice(text: string, key: string): Promise<SpeechResult> {
+async function googleVoice(text: string, key: string, name: string): Promise<SpeechResult> {
   try {
     const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         input: { text },
-        voice: { languageCode: "en-US", name: voiceName },
+        voice: { languageCode: "en-US", name },
         audioConfig: { audioEncoding: "LINEAR16" },
       }),
     });
