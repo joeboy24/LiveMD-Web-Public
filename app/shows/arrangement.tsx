@@ -1069,7 +1069,7 @@ export function Arrangement({
   const percent = progress === null ? 0 : Math.round(Math.min(Math.max(progress, 0), 1) * 100);
 
   return (
-    <div data-help="The arrangement. Play the track, mark sections, and place cues." className="flex h-full min-h-0 flex-col">
+    <div data-help="The arrangement. Play the track, mark sections, and place cues." className="flex min-h-full flex-col md:h-full md:min-h-0">
       {settingsOpen ? (
         <SongSettings
           songKey={song.key}
@@ -1139,29 +1139,32 @@ export function Arrangement({
         </div>
       </div>
 
-      <div className="mt-3 flex shrink-0 items-end gap-3">
-        <div className="inline-flex shrink-0 items-end">
-          {pages.map(([item, label, color, help], index) => (
-            <button
-              key={item}
-              type="button"
-              data-help={help}
-              onClick={() => setSegment(item)}
-              className={`rounded-t-md px-3.5 text-[12px] font-semibold tracking-wide text-[#1A242C] outline-none transition-[height] duration-200 focus-visible:ring-2 focus-visible:ring-primary-hover ${index > 0 ? "-ml-1.5" : ""} ${segment === item ? "z-10 h-10" : "h-8 opacity-80 hover:opacity-100"}`}
-              style={{ backgroundColor: color }}
-            >
-              {label}
-            </button>
-          ))}
+      <div className="mt-3 flex shrink-0 flex-col md:flex-row md:items-end md:gap-3">
+        <div className="flex min-w-0 items-end gap-3 md:contents">
+          <div className="inline-flex shrink-0 items-end">
+            {pages.map(([item, label, color, help], index) => (
+              <button
+                key={item}
+                type="button"
+                data-help={help}
+                onClick={() => setSegment(item)}
+                className={`rounded-t-md px-3.5 text-[12px] font-semibold tracking-wide text-[#1A242C] outline-none transition-[height] duration-200 focus-visible:ring-2 focus-visible:ring-primary-hover ${index > 0 ? "-ml-1.5" : ""} ${segment === item ? "z-10 h-10" : "h-8 opacity-80 hover:opacity-100"}`}
+                style={{ backgroundColor: color }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mb-2 min-w-0 shrink truncate text-xs">
+            <span className="font-semibold text-ink tabular-nums">{shownBar}</span>
+            <span className="ml-2 font-medium text-muted">
+              of {totalBars} · {shownSection}
+            </span>
+          </p>
         </div>
-        <p className="mb-2 min-w-0 shrink truncate text-xs">
-          <span className="font-semibold text-ink tabular-nums">{shownBar}</span>
-          <span className="ml-2 font-medium text-muted">
-            of {totalBars} · {shownSection}
-          </span>
-        </p>
-        <div className="mb-2 ml-auto flex shrink-0 items-center gap-2">
-          <label className="relative block max-w-[200px]">
+        <div className="h-px w-full md:hidden" style={{ backgroundColor: pageColor }} />
+        <div className="mt-2 flex flex-wrap items-center gap-2 md:mt-0 md:mb-2 md:ml-auto md:shrink-0 md:flex-nowrap">
+          <label className="relative block w-full md:w-auto md:max-w-[200px]">
             <select
               aria-label="Setlist songs"
               value={song.id}
@@ -1215,12 +1218,12 @@ export function Arrangement({
           </button>
         </div>
       </div>
-      <div className="h-px w-full" style={{ backgroundColor: pageColor }} />
+      <div className="hidden h-px w-full md:block" style={{ backgroundColor: pageColor }} />
 
       {progress !== null ? <ReadyBar percent={percent} /> : null}
 
       {segment === "tracks" ? (
-        <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="mt-4 flex flex-col md:min-h-0 md:flex-1 md:overflow-hidden">
           {song.stemKey ? (
             <>
               <div className="relative flex shrink-0 rounded-[14px] border border-ink/10 bg-surface">
@@ -1416,16 +1419,16 @@ export function Arrangement({
       ) : null}
 
       {segment === "sections" ? (
-        <ul className="mt-4 grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto">
+        <ul className="mt-4 grid content-start gap-2.5 md:min-h-0 md:flex-1 md:overflow-y-auto">
           {sections.length === 0 ? (
             <li className="pt-2 text-[16px] text-muted">Mark sections on the track.</li>
           ) : (
             sections.map((section, index) => (
-              <li key={section.id} className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-3.5">
-                <span className="h-10 w-1.5 shrink-0 rounded-[3px]" style={{ backgroundColor: sectionColor(section.name) }} />
+              <li key={section.id} className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-2.5">
+                <span className="h-8 w-1.5 shrink-0 rounded-[3px]" style={{ backgroundColor: sectionColor(section.name) }} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[17px] font-semibold text-ink">{section.name}</span>
-                  <span className="mt-0.5 block text-[13px] text-muted">{barLabel(section.bars)}</span>
+                  <span className="block truncate text-[15px] leading-5 font-semibold text-ink">{section.name}</span>
+                  <span className="block text-[12px] leading-4 text-muted">{barLabel(section.bars)}</span>
                 </span>
                 <RowMenu
                   label={`${section.name} actions`}
@@ -1480,21 +1483,21 @@ export function Arrangement({
       ) : null}
 
       {segment === "cues" ? (
-        <ul className="mt-4 grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto">
+        <ul className="mt-4 grid content-start gap-2.5 md:min-h-0 md:flex-1 md:overflow-y-auto">
           {cues.length === 0 ? (
             <li className="pt-2 text-[16px] text-muted">
               {song.stemKey ? "Add cues on the wave under Tracks. They are spoken as the playhead reaches them." : "No cues in this song."}
             </li>
           ) : (
             cues.map((cue, index) => (
-              <li key={`${cue.bar}-${cue.text}-${index}`} className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-3.5">
+              <li key={`${cue.bar}-${cue.text}-${index}`} className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-2.5">
                 <span
-                  className="h-10 w-1.5 shrink-0 rounded-[3px]"
+                  className="h-8 w-1.5 shrink-0 rounded-[3px]"
                   style={{ backgroundColor: sectionColor(sectionAtBar(stored(sections), cue.bar)) }}
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[17px] font-semibold text-ink">{cue.text}</span>
-                  <span className="mt-0.5 block truncate text-[13px] text-muted">
+                  <span className="block truncate text-[15px] leading-5 font-semibold text-ink">{cue.text}</span>
+                  <span className="block truncate text-[12px] leading-4 text-muted">
                     Bar {cue.bar} · {sectionAtBar(stored(sections), cue.bar)} · Out 3
                   </span>
                 </span>
@@ -2104,7 +2107,7 @@ function LyricsPane({
   }, [marker]);
 
   return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-white/6 bg-surface">
+    <div className="mt-3 flex flex-col rounded-[14px] border border-white/6 bg-surface md:min-h-0 md:flex-1 md:overflow-hidden">
       {editing ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between px-[18px] pt-3.5 pb-2">
@@ -2143,14 +2146,14 @@ function LyricsPane({
           </button>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-col md:min-h-0 md:flex-1">
           <div className="flex shrink-0 items-center px-[22px] pt-[18px] pb-4">
             <span className="text-[22px] font-semibold tracking-[0.8px]" style={{ color: sectionInk(sectionName) }}>
               {sectionName}
             </span>
           </div>
-          <div className="flex min-h-0 flex-1">
-            <div className="flex w-2/3 min-w-0 flex-col gap-3.5 overflow-hidden px-[22px] pb-[22px]">
+          <div className="flex flex-col md:min-h-0 md:flex-1 md:flex-row">
+            <div className="flex w-full min-w-0 flex-col gap-3.5 overflow-hidden px-[22px] pb-[22px] md:w-2/3">
               {placed.length === 0 ? (
                 <p className="text-[20px] font-medium text-muted">No lyrics in this section</p>
               ) : (
@@ -2169,8 +2172,8 @@ function LyricsPane({
                 })
               )}
             </div>
-            <div className="w-px shrink-0 bg-background" />
-            <div className="flex min-h-0 w-1/3 flex-col">
+            <div className="mx-[22px] h-px shrink-0 bg-background md:mx-0 md:h-auto md:w-px" />
+            <div className="flex w-full flex-col md:min-h-0 md:w-1/3">
               <div className="flex shrink-0 items-center justify-between gap-2 px-3.5 pt-3.5 pb-2">
                 <button
                   type="button"
@@ -2192,7 +2195,7 @@ function LyricsPane({
                   Edit
                 </button>
               </div>
-              <div ref={scriptRef} className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-3.5">
+              <div ref={scriptRef} className="px-3.5 pb-3.5 md:min-h-0 md:flex-1 md:overflow-y-auto">
               <p className="mb-4 text-[11px] font-medium text-disabled">Tap the line you're singing</p>
               <div className="grid gap-4">
                 {lyricSectionGroups(blocks, stored(sections)).map((group) => (
