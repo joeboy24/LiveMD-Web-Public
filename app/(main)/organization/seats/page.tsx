@@ -49,7 +49,7 @@ async function SeatsBody() {
         title="Seats"
         detail={`${organization.name}. Invite someone with a name, an email, and a role. They take the seat when they accept.`}
       />
-      <SeatBoard seats={organization.seats} seatAllowance={seatLimit(organization.plan)} />
+      <SeatBoard seats={organization.seats} seatAllowance={await readSeatAllowance(livePlan(organization.plan, organization.planUntil))} />
     </div>
   );
 }

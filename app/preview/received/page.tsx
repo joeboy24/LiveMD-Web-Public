@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { PaymentReceived } from "../../components/payment-received";
 
 const samples = [

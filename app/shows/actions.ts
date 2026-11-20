@@ -8,11 +8,12 @@ import { storedStage, storedTempo } from "./stage";
 import { livePlan, storageBytes } from "../(main)/organization/billing";
 import { notifyPublishedShow } from "../(main)/organization/notify";
 import { readOrganization } from "../(main)/organization/queries";
-import { roles } from "../(main)/organization/sample";
+import { roles, storageGb } from "../(main)/organization/sample";
 import { listSongs, showIsOpen } from "./queries";
 import { publishableSongs, publishedShow, snapshotSongs } from "./publication";
+import { cueWordsExceeded, storeCueVoices } from "./cue-speech";
 import { parseCues, parseSections } from "./structure";
-import { ownedAudioKey, signAudioRead, signAudioUpload } from "./storage";
+import { ownedAudioKey, signAudioRead, signAudioUpload, storedAudioBytes } from "./storage";
 import type { FormState, PublishedShow, ShowSnapshot, Song, SongCue, SongMix, SongSection, SongStage } from "./types";
 
 export async function createShow(_state: FormState, formData: FormData): Promise<FormState> {
@@ -416,6 +417,7 @@ export async function saveArrangement(
   if (!Number.isFinite(leadBeats) || !Number.isInteger(slipBars) || slipBars < 0 || slipBars > 80) {
     return { error: "Those sections didn't save." };
   }
+  if (await cueWordsExceeded(songId, cleanCues)) return { error: "Cue words are limited to 100." };
 
   const sql = getSql();
   const rows = await sql`
@@ -430,6 +432,12 @@ export async function saveArrangement(
   `;
   if (!rows[0]) return { error: "That song is missing." };
   revalidatePath("/", "layout");
+  try {
+    const voice = await storeCueVoices(cleanCues.map((cue) => cue.text));
+    if (voice) return { error: voice };
+  } catch {
+    return { error: "The cue voice didn't render." };
+  }
   return { error: null as string | null };
 }
 

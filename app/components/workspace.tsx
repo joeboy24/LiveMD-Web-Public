@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { FiChevronLeft } from "react-icons/fi";
 import { IconRail } from "./icon-rail";
 import { NotesPanel } from "./notes-panel";

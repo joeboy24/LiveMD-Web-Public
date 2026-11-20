@@ -79,7 +79,7 @@ export async function addSeat(_state: OrganizationState, formData: FormData): Pr
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
   if (organization.seats.some((seat) => seat.email === email)) return { error: "That email already has a seat." };
-  if (organization.seats.length >= seatLimit(organization.plan)) redirect("/organization/plan");
+  if (organization.seats.length >= (await readSeatAllowance(livePlan(organization.plan, organization.planUntil)))) redirect("/organization/plan");
   const sql = getSql();
   await sql`
     insert into seats (organization_id, name, email, role, invited_at)

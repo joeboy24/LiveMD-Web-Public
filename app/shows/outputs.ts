@@ -20,18 +20,54 @@ export async function connectedDevice(): Promise<StageDevice> {
   return { name: active.name, outputs: Math.max(bare, targeted), labeled: active.labeled };
 }
 
+let naming: Promise<boolean> | null = null;
+
+export function allowOutputNames() {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return Promise.resolve(false);
+  if (!naming) {
+    naming = requestOutputNames().finally(() => {
+      naming = null;
+    });
+  }
+  return naming;
+}
+
+async function requestOutputNames() {
+  if (await outputNamesVisible()) return true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function outputAccessGranted() {
+  if (typeof navigator === "undefined") return false;
+  if (!navigator.mediaDevices?.getUserMedia) return true;
+  try {
+    const status = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+    if (status?.state === "granted") return true;
+    if (status?.state === "prompt" || status?.state === "denied") return false;
+  } catch {
+    // This browser does not report microphone permission.
+  }
+  return outputNamesVisible();
+}
+
+async function outputNamesVisible() {
+  const listed = await outputDevices();
+  return listed.some((device) => device.label);
+}
+
 export async function revealDeviceName(): Promise<StageDevice> {
   if (canChooseDevice()) {
     const chosen = await chooseDevice();
     if (chosen) return chosen;
     return connectedDevice();
   }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach((track) => track.stop());
-  } catch {
-    // The browser kept the device name hidden.
-  }
+  await allowOutputNames();
   return connectedDevice();
 }
 

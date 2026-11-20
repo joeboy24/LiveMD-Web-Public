@@ -7,13 +7,13 @@ import { busGain, layerGain, storedMix } from "./mix";
 import { SongSettings } from "./song-settings";
 import { createPitch, loadPitch, pitchLatencySamples } from "./pitch";
 import { prepareCueVoices, speakCue, stopCueVoices } from "./cue-voice";
-import { connectBus, performanceContext, primeOutputs, useOutputDevice } from "./outputs";
+import { allowOutputNames, connectBus, performanceContext, primeOutputs, useOutputDevice } from "./outputs";
 import { routedOutput, stemRate, storedStage, storedTempo, withSourceTempo } from "./stage";
 import { playable, prepareStretch } from "./stretch";
 import { enqueueSave, flushSaves } from "./save-queue";
 import { THEME_EVENT } from "../theme";
 import { makeClickBuffer } from "./click-track";
-import { activeLyricIndex, barLabel, cueColor, cueSpeechPlace, encodeSectionLyrics, lyricBlocks, lyricSectionGroups, moreSectionNames, placedLyrics, sectionAtBar, sectionColor, sectionNames } from "./structure";
+import { activeLyricIndex, barLabel, cueColor, cuePlayPlace, encodeSectionLyrics, lyricBlocks, lyricSectionGroups, moreSectionNames, placedLyrics, sectionAtBar, sectionColor, sectionNames } from "./structure";
 import type { Song, SongCue, SongMix, SongSection, SongStage } from "./types";
 
 const fullBarWidth = 92;
@@ -668,18 +668,17 @@ export function Arrangement({
       return;
     }
     const delta = bars - (previous ?? bars);
-    for (const cue of cuesRef.current) {
+    cuesRef.current.forEach((cue) => {
       const text = cue.text.trim();
-      if (!text) continue;
-      const anchor = cue.place ?? Math.max(cue.bar - 1, 0) + 0.35;
-      const place = cueSpeechPlace(text, anchor, barSizeRef.current);
+      if (!text) return;
+      const place = cuePlayPlace(cue);
       const crossed = previous !== null && delta > 0 && delta < 1.25 && previous < place && bars >= place;
       const landed = (previous === null || delta < -0.08 || delta >= 1.25) && Math.abs(bars - place) < 0.2;
-      if (!crossed && !landed) continue;
-      if (spokenRef.current.some((mark) => mark.bar === cue.bar && mark.text === text && mark.place === place)) continue;
+      if (!crossed && !landed) return;
+      if (spokenRef.current.some((mark) => mark.bar === cue.bar && mark.text === text && mark.place === place)) return;
       spokenRef.current.push({ bar: cue.bar, place, text });
       void speakCue(context, text, gain, stageRef.current.route.guide);
-    }
+    });
   }
 
   function release(item: { source: AudioBufferSourceNode; pitch: AudioWorkletNode | null }) {
@@ -867,12 +866,15 @@ export function Arrangement({
     armTokenRef.current = token;
     const showBar = !uploadRef.current;
     if (showBar) setProgress(0.08);
+    await allowOutputNames();
+    if (token !== armTokenRef.current) return;
     const context = performanceContext(audioRef.current);
     audioRef.current = context;
     if (showBar) setProgress(0.4);
     primeOutputs(context);
     await useOutputDevice(context);
-    await prepareCueVoices(cuesRef.current.map((cue) => cue.text));
+    await flushSaves();
+    await prepareCueVoices(context, cuesRef.current.map((cue) => cue.text));
     if (token !== armTokenRef.current) return;
     if (showBar) setProgress(0.85);
     await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
@@ -1248,6 +1250,7 @@ export function Arrangement({
                   onScrub={scrubTo}
                   onScrubEnd={endScrub}
                   onAddCue={addCueAt}
+                  knownCues={[...new Set([...songs.flatMap((item) => item.cues.map((cue) => cue.text.trim())), ...cues.map((cue) => cue.text.trim())].filter(Boolean))]}
                   onMoveCue={moveCue}
                   onDeleteCue={deleteCue}
                   onMoveEdge={moveEdge}
@@ -1532,6 +1535,29 @@ function MarkerMenu({ onDelete, className }: { onDelete: () => void; className: 
   );
 }
 
+function CueMatches({ query, cues, above, onChoose }: { query: string; cues: string[]; above: boolean; onChoose: (text: string) => void }) {
+  const typed = query.trim();
+  const needle = typed.toLowerCase();
+  const matches = needle.length < 4 ? [] : cues.filter((cue) => cue.toLowerCase().includes(needle)).slice(0, 6);
+  if (matches.length === 0) return null;
+  return (
+    <ul className={`absolute left-0 z-40 max-h-40 w-44 overflow-y-auto rounded-xl bg-surface py-1 shadow-[0_12px_28px_rgb(0_0_0/0.28)] ${above ? "bottom-9" : "top-9"}`}>
+      {matches.map((cue) => (
+        <li key={cue}>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onChoose(cue)}
+            className="block w-full truncate px-3 py-1.5 text-left text-[13px] font-semibold text-ink outline-none hover:bg-background"
+          >
+            {cue}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Wave({
   sections,
   cues,
@@ -1548,6 +1574,7 @@ function Wave({
   onScrub,
   onScrubEnd,
   onAddCue,
+  knownCues,
   onMoveCue,
   onDeleteCue,
   onMoveEdge,
@@ -1570,6 +1597,7 @@ function Wave({
   onScrub: (chart: number) => void;
   onScrubEnd: () => void;
   onAddCue: (place: number, y: number, text: string) => void;
+  knownCues: string[];
   onMoveCue: (index: number, place: number, y: number) => void;
   onDeleteCue: (index: number) => void;
   onMoveEdge: (index: number, bar: number) => void;
@@ -1826,15 +1854,15 @@ function Wave({
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
           {cues.map((cue, index) => {
             const lifted = cueLift?.index === index;
-            const place = lifted ? cueLift.place : (cue.place ?? cue.bar - 1 + 0.35);
+            const place = lifted ? cueLift.place : cuePlayPlace(cue);
             const y = (lifted ? cueLift.y : (cue.y ?? 0.62)) * laneHeight;
             const open = markerMenu?.kind === "cue" && markerMenu.index === index;
             return (
-              <div key={`${cue.text}-${index}`} data-cue="" className={`absolute z-[15] -translate-x-1/2 -translate-y-1/2 ${open ? "z-30" : ""}`} style={{ left: place * barSize, top: y }}>
+              <div key={`${cue.text}-${index}`} data-cue="" data-cue-index={index} className={`absolute z-[15] -translate-y-1/2 ${open ? "z-30" : ""}`} style={{ left: place * barSize, top: y }}>
                 <button
                   type="button"
                   aria-label={`Move ${cue.text}`}
-                  className={`max-w-[240px] truncate rounded-full px-2.5 py-1 text-[13px] font-semibold text-[#1A242C] shadow-[0_1px_4px_rgb(0_0_0/0.28)] ${lifted ? "cursor-grabbing" : "cursor-grab"}`}
+                  className={`relative z-[1] max-w-[240px] truncate rounded-full px-2.5 py-1 text-[13px] font-semibold text-[#1A242C] shadow-[0_1px_4px_rgb(0_0_0/0.28)] ${lifted ? "cursor-grabbing" : "cursor-grab"}`}
                   style={{ backgroundColor: cueColor(cue.text) }}
                   onPointerDown={(event) => {
                     event.stopPropagation();
@@ -1884,7 +1912,7 @@ function Wave({
                 </button>
                 {open ? (
                   <MarkerMenu
-                    className={`left-1/2 -translate-x-1/2 ${y < 70 ? "top-7" : "bottom-7"}`}
+                    className={`left-0 ${y < 70 ? "top-7" : "bottom-7"}`}
                     onDelete={() => {
                       onMarkerMenu(null);
                       onDeleteCue(index);
@@ -1946,7 +1974,7 @@ function Wave({
           {draft ? (
             <form
               data-draft=""
-              className="absolute z-30 flex -translate-x-1/2 -translate-y-1/2 items-center rounded-full px-1 shadow-[0_2px_8px_rgb(0_0_0/0.35)]"
+              className="absolute z-30 flex -translate-y-1/2 items-center rounded-full px-1 shadow-[0_2px_8px_rgb(0_0_0/0.35)]"
               style={{ left: draft.place * barSize, top: draft.y * laneHeight, backgroundColor: cueColor(draft.text) }}
               onSubmit={(event) => {
                 event.preventDefault();
@@ -1983,6 +2011,16 @@ function Wave({
                   commitDraft();
                 }}
                 className="h-7 w-[108px] bg-transparent px-2 text-[13px] font-semibold text-[#1A242C] outline-none placeholder:text-[#1A242C]/45"
+              />
+              <CueMatches
+                query={draft.text}
+                cues={knownCues}
+                above={draft.y > 0.62}
+                onChoose={(text) => {
+                  onAddCue(draft.place, draft.y, text);
+                  draftRef.current = null;
+                  setDraft(null);
+                }}
               />
             </form>
           ) : null}

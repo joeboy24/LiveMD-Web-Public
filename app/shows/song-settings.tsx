@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../components/modal";
-import { canChooseDevice, chooseDevice, connectedDevice, revealDeviceName, type StageDevice } from "./outputs";
+import { allowOutputNames, canChooseDevice, chooseDevice, connectedDevice, revealDeviceName, type StageDevice } from "./outputs";
 import { displayKey, pitchNote, storedTempo } from "./stage";
 import type { SongRoute, SongStage } from "./types";
 

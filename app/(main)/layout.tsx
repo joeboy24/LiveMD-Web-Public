@@ -7,6 +7,7 @@ import { AccountBar } from "../components/account-bar";
 import { CurrentAccount } from "../components/current-account";
 import { Workspace } from "../components/workspace";
 import { OrganizationLabel } from "../components/organization-header";
+import { AudioAccessBanner } from "../components/audio-access-banner";
 import { SiteHeader } from "../components/site-header";
 import { SetlistHistory } from "../shows/history";
 import { ShowSidebar } from "../shows/show-sidebar";

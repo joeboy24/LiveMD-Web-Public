@@ -52,6 +52,60 @@ export async function signAudioRead(showId: string, key: string) {
   return { url };
 }
 
+export async function storedAudioBytes(prefixes: string[]) {
+  const storage = client();
+  if (!storage) return null;
+  let total = 0;
+  for (const prefix of prefixes) {
+    if (!prefix.startsWith("shows/")) continue;
+    let token: string | undefined;
+    do {
+      const page = await storage.s3.send(
+        new ListObjectsV2Command({
+          Bucket: storage.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+        }),
+      );
+      for (const item of page.Contents ?? []) total += item.Size ?? 0;
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+  }
+  return total;
+}
+
+const cueAudioKey = /^cues\/[0-9a-f]{64}$/;
+
+export async function readCueAudio(key: string) {
+  if (!cueAudioKey.test(key)) return null;
+  const storage = client();
+  if (!storage) return null;
+  try {
+    const result = await storage.s3.send(new GetObjectCommand({ Bucket: storage.bucket, Key: key }));
+    if (!result.Body) return null;
+    const bytes = await result.Body.transformToByteArray();
+    return { body: Buffer.from(bytes), contentType: result.ContentType || "application/octet-stream" };
+  } catch (error) {
+    if (missingObject(error)) return null;
+    throw error;
+  }
+}
+
+export async function writeCueAudio(key: string, body: Buffer, contentType: string) {
+  if (!cueAudioKey.test(key)) return false;
+  const storage = client();
+  if (!storage) return false;
+  await storage.s3.send(
+    new PutObjectCommand({
+      Bucket: storage.bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+  return true;
+}
+
 export async function saveAudio(showId: string, key: string, destination: string) {
   if (ownedAudioKey(showId, key) !== key) return false;
   const storage = client();
@@ -71,6 +125,13 @@ export function ownedAudioKey(showId: string, value: FormDataEntryValue | null) 
 }
 
 const showIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function missingObject(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String(error.name) : "";
+  const status = "$metadata" in error && error.$metadata && typeof error.$metadata === "object" && "httpStatusCode" in error.$metadata ? Number(error.$metadata.httpStatusCode) : 0;
+  return name === "NotFound" || name === "NoSuchKey" || status === 404;
+}
 
 function client() {
   const account = process.env.R2_ACCOUNT_ID;

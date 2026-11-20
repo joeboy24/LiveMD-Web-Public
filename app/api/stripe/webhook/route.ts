@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { recordPaidSession, stripeClient } from "../../../(main)/organization/billing";
 
-export const runtime = "nodejs";
-
 export async function POST(request: Request) {
   const stripe = stripeClient();
   const secret = process.env.STRIPE_WEBHOOK_SECRET;

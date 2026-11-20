@@ -5,14 +5,12 @@ import { readAudio } from "./actions";
 import { makeClickBuffer } from "./click-track";
 import { busGain, layerGain } from "./mix";
 import { prepareCueVoices, speakCue, stopCueVoices } from "./cue-voice";
-import { connectBus, performanceContext, primeOutputs, useOutputDevice } from "./outputs";
+import { allowOutputNames, connectBus, performanceContext, primeOutputs, useOutputDevice } from "./outputs";
 import { createPitch, loadPitch, pitchLatencySamples } from "./pitch";
 import { routedOutput, stemRate } from "./stage";
 import { playable, prepareStretch } from "./stretch";
-import { cueSpeechPlace } from "./structure";
+import { cuePlayPlace } from "./structure";
 import type { Song, SongCue } from "./types";
-
-const cueBarSize = 92;
 
 type Mode = "set" | "song";
 type Layer = { id: string; key: string; main: boolean };
@@ -129,18 +127,17 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
       return;
     }
     const delta = chart - (previous ?? chart);
-    for (const cue of cues) {
+    cues.forEach((cue) => {
       const text = cue.text.trim();
-      if (!text) continue;
-      const anchor = cue.place ?? Math.max(cue.bar - 1, 0) + 0.35;
-      const place = cueSpeechPlace(text, anchor, cueBarSize);
+      if (!text) return;
+      const place = cuePlayPlace(cue);
       const crossed = previous !== null && delta > 0 && delta < 1.25 && previous < place && chart >= place;
       const landed = (previous === null || delta < -0.08 || delta >= 1.25) && Math.abs(chart - place) < 0.2;
-      if (!crossed && !landed) continue;
-      if (spokenRef.current.some((mark) => mark.bar === cue.bar && mark.text === text && mark.place === place)) continue;
+      if (!crossed && !landed) return;
+      if (spokenRef.current.some((mark) => mark.bar === cue.bar && mark.text === text && mark.place === place)) return;
       spokenRef.current.push({ bar: cue.bar, place, text });
       void speakCue(context, text, gain, output);
-    }
+    });
   }
 
   function finish(token: number, songId: string) {
@@ -159,7 +156,7 @@ export function useSetlistPlayback(showId: string, songs: Song[]) {
   async function load(song: Song, nextMode: Mode, resume: boolean) {
     const context = arm();
     await useOutputDevice(context);
-    await prepareCueVoices(song.cues.map((cue) => cue.text));
+    await prepareCueVoices(context, song.cues.map((cue) => cue.text));
     const layers = songLayers(song);
     if (layers.length === 0) return;
     const token = tokenRef.current + 1;
