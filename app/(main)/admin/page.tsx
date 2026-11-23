@@ -1,5 +1,6 @@
 import { Suspense } from "react";
-import { readPlanPrices } from "../organization/billing";
+import { bucketAudioBytes } from "../../shows/storage";
+import { readPlanPrices, readTrialDays } from "../organization/billing";
 import { PageIntro } from "../organization/chrome";
 import { planAccent, plans, storageGb } from "../organization/sample";
 import { PriceForm } from "./price-form";
@@ -13,7 +14,7 @@ export default function AdminPricesPage() {
 }
 
 async function Prices() {
-  const prices = await readPlanPrices();
+  const [prices, trialDays, storedAudio] = await Promise.all([readPlanPrices(), readTrialDays(), audioInBucket()]);
   const paid = plans;
   const allowance = (name: string) => {
     const saved = prices.find((item) => item.plan === name);
@@ -29,7 +30,8 @@ async function Prices() {
       <PageIntro
         eyebrow="SYSTEM"
         title="Prices"
-        detail={`Personal includes ${stored("Personal")} GB. House includes ${stored("House")} GB. Room includes ${stored("Room")} GB. Custom includes ${stored("Custom")} GB. Above 100 seats its price is the seat count times the Room price, divided by 100.`}
+        detail={`Personal includes ${stored("Personal")} GB and a ${trialDays}-day trial. House includes ${stored("House")} GB. Room includes ${stored("Room")} GB. Custom includes ${stored("Custom")} GB. Above 100 seats its price is the seat count times the Room price, divided by 100.`}
+        mark={<span className="rounded-full bg-surface px-3 py-1 text-[12px] font-semibold text-ink ring-1 ring-surface-elevated">{storedAudio == null ? "No audio storage" : `${gigabytes(storedAudio)} GB audio`}</span>}
       />
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {paid.map((plan) => {
@@ -58,6 +60,7 @@ async function Prices() {
                   year={shown?.yearCents ? dollars(shown.yearCents) : ""}
                   seats={limits.seats ? String(limits.seats) : ""}
                   storage={limits.storage ? String(limits.storage) : ""}
+                  trial={plan.name === "Personal" ? String(price?.trialDays ?? trialDays) : ""}
                   custom={custom}
                 />
               </div>
@@ -67,6 +70,21 @@ async function Prices() {
       </ul>
     </div>
   );
+}
+
+async function audioInBucket() {
+  try {
+    return await bucketAudioBytes();
+  } catch {
+    return null;
+  }
+}
+
+function gigabytes(bytes: number) {
+  const gb = bytes / 1_000_000_000;
+  if (gb === 0) return "0";
+  if (gb >= 10) return String(Math.round(gb));
+  return gb.toFixed(gb >= 1 ? 1 : 2);
 }
 
 function dollars(cents: number) {

@@ -21,6 +21,7 @@ export type PlanPrice = {
   yearCents: number | null;
   seats: number | null;
   storageGb: number | null;
+  trialDays: number | null;
   currency: string;
 };
 
@@ -46,6 +47,12 @@ export async function readSeatAllowance(plan: string) {
   if (plan === "Custom") return price?.seats && price.seats > 100 ? price.seats : 101;
   if (price?.seats && price.seats >= 1) return price.seats;
   return seatLimit(plan);
+}
+
+export async function readTrialDays() {
+  const price = await readPlanPrice("Personal");
+  if (price?.trialDays && price.trialDays >= 1 && price.trialDays <= 365) return price.trialDays;
+  return 14;
 }
 
 export async function readStorageGb(plan: string) {
@@ -86,6 +93,7 @@ async function preparePlanPrices() {
   await sql.query(`alter table plan_prices add column if not exists year_cents integer`);
   await sql.query(`alter table plan_prices add column if not exists seats integer`);
   await sql.query(`alter table plan_prices add column if not exists storage_gb integer`);
+  await sql.query(`alter table plan_prices add column if not exists trial_days integer`);
   await sql.query(`alter table plan_prices alter column amount_cents drop not null`);
   await sql.query(
     `create table if not exists plan_discounts (
@@ -130,18 +138,20 @@ async function preparePlanPrices() {
     set seats = coalesce(plan_prices.seats, excluded.seats),
         storage_gb = coalesce(plan_prices.storage_gb, excluded.storage_gb)
   `;
+  await sql`update plan_prices set trial_days = 14 where plan = 'Personal' and trial_days is null`;
 }
 
 export async function readPlanPrices() {
   await ensurePlanPrices();
   const sql = getSql();
-  const rows = await sql`select plan, quarter_cents, year_cents, seats, storage_gb, currency from plan_prices`;
+  const rows = await sql`select plan, quarter_cents, year_cents, seats, storage_gb, trial_days, currency from plan_prices`;
   return rows.flatMap((row) => {
     const plan = row.plan ? String(row.plan) : "";
     const quarterCents = centsOrNull(row.quarter_cents);
     const yearCents = centsOrNull(row.year_cents);
     const seats = Number(row.seats);
     const storage = Number(row.storage_gb);
+    const trial = Number(row.trial_days);
     const currency = row.currency ? String(row.currency) : "usd";
     if (!plan) return [];
     return [{
@@ -150,6 +160,7 @@ export async function readPlanPrices() {
       yearCents,
       seats: Number.isInteger(seats) && seats >= 1 ? seats : null,
       storageGb: Number.isInteger(storage) && storage >= 1 ? storage : null,
+      trialDays: Number.isInteger(trial) && trial >= 1 && trial <= 365 ? trial : null,
       currency,
     }];
   });
@@ -172,6 +183,7 @@ export function planCharge(prices: PlanPrice[], plan: string) {
     yearCents: customPriceCents(room?.yearCents ?? null, seats),
     seats: row?.seats ?? null,
     storageGb: row?.storageGb ?? null,
+    trialDays: null,
     currency: room?.currency ?? "usd",
   };
 }

@@ -28,17 +28,20 @@ export async function savePlanPrice(_state: PriceState, formData: FormData): Pro
   if (String(formData.get("year") ?? "").trim() && year == null) return { error: "Enter the 1-year price in dollars.", saved: false, stamp: "" };
   if ((quarter != null && quarter < 50) || (year != null && year < 50)) return { error: "The smallest charge is 50 cents.", saved: false, stamp: "" };
   if (quarter == null && year == null) return { error: "Enter a price for 3 months or 1 year.", saved: false, stamp: "" };
+  const trial = plan === "Personal" ? wholeFrom(String(formData.get("trial") ?? "")) : null;
+  if (plan === "Personal" && (trial == null || trial > 365)) return { error: "Enter the trial in days.", saved: false, stamp: "" };
 
   await readPlanPrices();
   const sql = getSql();
   await sql`
-    insert into plan_prices (plan, quarter_cents, year_cents, seats, storage_gb, currency)
-    values (${plan}, ${quarter}, ${year}, ${limits.seats}, ${limits.storage}, 'usd')
+    insert into plan_prices (plan, quarter_cents, year_cents, seats, storage_gb, trial_days, currency)
+    values (${plan}, ${quarter}, ${year}, ${limits.seats}, ${limits.storage}, ${trial}, 'usd')
     on conflict (plan) do update
     set quarter_cents = excluded.quarter_cents,
         year_cents = excluded.year_cents,
         seats = excluded.seats,
         storage_gb = excluded.storage_gb,
+        trial_days = coalesce(excluded.trial_days, plan_prices.trial_days),
         currency = 'usd'
   `;
   revalidatePath("/admin");

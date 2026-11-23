@@ -7,7 +7,7 @@ import { appOrigin, mailConfigured, sendInvitation } from "../../auth/mail";
 import { createSignInLink, dropSignInLink, readSessionAccount } from "../../auth/queries";
 import { getSql } from "../../db";
 import { readOrganization } from "./queries";
-import { livePlan, readSeatAllowance } from "./billing";
+import { livePlan, readSeatAllowance, readTrialDays } from "./billing";
 import { roles } from "./sample";
 
 export type OrganizationState = {
@@ -27,9 +27,10 @@ export async function createOrganization(_state: OrganizationState, formData: Fo
   if (existing) return { error: null };
 
   const sql = getSql();
+  const trialDays = await readTrialDays();
   const rows = await sql`
     insert into organizations (name, trial_until)
-    values (${name}, now() + interval '14 days')
+    values (${name}, now() + make_interval(days => ${trialDays}))
     returning id
   `;
   const id = String(rows[0].id);

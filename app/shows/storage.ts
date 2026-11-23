@@ -52,6 +52,24 @@ export async function signAudioRead(showId: string, key: string) {
   return { url };
 }
 
+export async function bucketAudioBytes() {
+  const storage = client();
+  if (!storage) return null;
+  let total = 0;
+  let token: string | undefined;
+  do {
+    const page = await storage.s3.send(
+      new ListObjectsV2Command({
+        Bucket: storage.bucket,
+        ContinuationToken: token,
+      }),
+    );
+    for (const item of page.Contents ?? []) total += item.Size ?? 0;
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
+  return total;
+}
+
 export async function storedAudioBytes(prefixes: string[]) {
   const storage = client();
   if (!storage) return null;

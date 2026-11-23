@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { ensureAuthTables, readSessionAccount } from "../../auth/queries";
 import { getSql } from "../../db";
+import { readTrialDays } from "./billing";
 
 export type SeatRecord = {
   id: string;
@@ -43,9 +44,10 @@ async function migrate() {
   await sql`alter table organizations add column if not exists plan text not null default 'Personal'`;
   await sql`alter table organizations add column if not exists plan_until timestamptz`;
   await sql`alter table organizations add column if not exists trial_until timestamptz`;
+  const trialDays = await readTrialDays();
   await sql`
     update organizations
-    set trial_until = now() + interval '14 days'
+    set trial_until = now() + make_interval(days => ${trialDays})
     where plan = 'Personal' and plan_until is null and trial_until is null
   `;
   await sql`

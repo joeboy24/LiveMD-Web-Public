@@ -15,6 +15,7 @@ export function PriceForm({
   year,
   seats = "",
   storage = "",
+  trial = "",
   figure,
   detail,
   custom = false,
@@ -25,6 +26,7 @@ export function PriceForm({
   year: string;
   seats?: string;
   storage?: string;
+  trial?: string;
   figure: string;
   detail: string;
   custom?: boolean;
@@ -34,18 +36,21 @@ export function PriceForm({
   const [yearDollars, setYearDollars] = useState(year);
   const [seatCount, setSeatCount] = useState(seats);
   const [storageCount, setStorageCount] = useState(storage);
+  const [trialCount, setTrialCount] = useState(trial);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "info"; stamp: number } | null>(null);
   const [state, action, pending] = useActionState(savePlanPrice, initial);
-  const changed = quarterDollars.trim() !== quarter || yearDollars.trim() !== year || seatCount.trim() !== seats || storageCount.trim() !== storage;
-  const ready = changed && (quarterDollars.trim().length > 0 || yearDollars.trim().length > 0) && seatCount.trim().length > 0 && storageCount.trim().length > 0;
+  const personal = plan === "Personal";
+  const changed = quarterDollars.trim() !== quarter || yearDollars.trim() !== year || seatCount.trim() !== seats || storageCount.trim() !== storage || (personal && trialCount.trim() !== trial);
+  const ready = changed && (quarterDollars.trim().length > 0 || yearDollars.trim().length > 0) && seatCount.trim().length > 0 && storageCount.trim().length > 0 && (!personal || trialCount.trim().length > 0);
 
   useEffect(() => {
     setQuarterDollars(quarter);
     setYearDollars(year);
     setSeatCount(seats);
     setStorageCount(storage);
-  }, [quarter, year, seats, storage]);
+    setTrialCount(trial);
+  }, [quarter, year, seats, storage, trial]);
 
   useEffect(() => {
     if (!state.saved) return;
@@ -112,6 +117,7 @@ export function PriceForm({
           <MoneyField label="1 year" name="year" value={yearDollars} onChange={setYearDollars} divided />
           <CountField label="Seats" name="seats" value={seatCount} onChange={setSeatCount} />
           <CountField label="GB" name="storage" value={storageCount} onChange={setStorageCount} divided />
+          {personal ? <CountField label="Trial days" name="trial" value={trialCount} onChange={setTrialCount} span /> : null}
         </div>
         <p className="mt-3 text-[12px] font-semibold text-muted">Per month. Checkout charges ×3 for 3 months and ×12 for 1 year.</p>
       </div>
@@ -134,9 +140,9 @@ function PriceReadout({ label, value, divided = false }: { label: string; value:
   );
 }
 
-function CountField({ label, name, value, onChange, divided = false }: { label: string; name: string; value: string; onChange: (value: string) => void; divided?: boolean }) {
+function CountField({ label, name, value, onChange, divided = false, span = false }: { label: string; name: string; value: string; onChange: (value: string) => void; divided?: boolean; span?: boolean }) {
   return (
-    <label className={`group relative grid min-w-0 gap-1 border-t border-surface-elevated px-3.5 py-3 ${divided ? "border-l border-surface-elevated" : ""}`}>
+    <label className={`group relative grid min-w-0 gap-1 border-t border-surface-elevated px-3.5 py-3 ${span ? "col-span-2" : ""} ${divided ? "border-l border-surface-elevated" : ""}`}>
       <span className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">{label}</span>
       <input
         name={name}
