@@ -15,12 +15,21 @@ export default function AdminPricesPage() {
 async function Prices() {
   const prices = await readPlanPrices();
   const paid = plans;
+  const allowance = (name: string) => {
+    const saved = prices.find((item) => item.plan === name);
+    const fallback = plans.find((item) => item.name === name);
+    return {
+      seats: saved?.seats ?? (name === "Custom" ? null : fallback?.seats ?? null),
+      storage: saved?.storageGb ?? storageGb(name),
+    };
+  };
+  const stored = (name: string) => allowance(name).storage;
   return (
     <div className="grid gap-8">
       <PageIntro
         eyebrow="SYSTEM"
         title="Prices"
-        detail="Personal includes 10 GB. House includes 100 GB. Room and Custom include 150 GB. Above 100 seats its price is the seat count times the Room price, divided by 100."
+        detail={`Personal includes ${stored("Personal")} GB. House includes ${stored("House")} GB. Room includes ${stored("Room")} GB. Custom includes ${stored("Custom")} GB. Above 100 seats its price is the seat count times the Room price, divided by 100.`}
       />
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {paid.map((plan) => {
@@ -29,8 +38,7 @@ async function Prices() {
           const accent = planAccent(plan.name);
           const custom = plan.name === "Custom";
           const shown = custom ? room : price;
-          const seats = custom ? price?.seats ?? null : plan.seats;
-          const storage = storageGb(plan.name);
+          const limits = allowance(plan.name);
           return (
             <li key={plan.name} className="flex flex-col overflow-hidden rounded-2xl bg-surface ring-1 ring-surface-elevated">
               <span className="h-1" style={{ background: accent }} />
@@ -38,17 +46,18 @@ async function Prices() {
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="text-[18px] font-semibold tracking-tight text-ink">{plan.name}</h2>
                   <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white" style={{ background: accent }}>
-                    {storage} GB
+                    {limits.storage} GB
                   </span>
                 </div>
                 <PriceForm
                   className="mt-6 flex flex-1 flex-col"
                   plan={plan.name}
-                  figure={String(seats ?? "100+")}
+                  figure={String(limits.seats ?? "100+")}
                   detail={plan.detail}
                   quarter={shown?.quarterCents ? dollars(shown.quarterCents) : ""}
                   year={shown?.yearCents ? dollars(shown.yearCents) : ""}
-                  seats={price?.seats ? String(price.seats) : ""}
+                  seats={limits.seats ? String(limits.seats) : ""}
+                  storage={limits.storage ? String(limits.storage) : ""}
                   custom={custom}
                 />
               </div>

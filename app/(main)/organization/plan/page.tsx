@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 import { readAccess } from "../../../auth/access";
-import { livePlan, planCharge, readPlanPrices, readSeatAllowance, termOpen, trialDaysLeft, type PlanPrice } from "../billing";
+import { livePlan, planCharge, readPlanPrices, readSeatAllowance, readStorageGb, termOpen, trialDaysLeft, type PlanPrice } from "../billing";
 import { settlePayment } from "./actions";
 import { PaidToast } from "./paid-toast";
 import { PageIntro } from "../chrome";
 import { readOrganization } from "../queries";
-import { planAccent, plans, storageGb } from "../sample";
+import { planAccent, plans } from "../sample";
 import { CustomOffer, PlanButton } from "./choose-plan";
 
 export default function PlanPage({ searchParams }: { searchParams: Promise<{ checkout?: string | string[]; session_id?: string | string[] }> }) {
@@ -37,9 +37,12 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
     plans.map(async (plan) => {
       const price = planCharge(prices, plan.name);
       const seats = plan.name === "Custom" ? price?.seats ?? null : await readSeatAllowance(plan.name);
-      return { plan, price, seats };
+      const storage = await readStorageGb(plan.name);
+      return { plan, price, seats, storage };
     }),
   );
+  const seatsOf = (name: string) => cards.find((card) => card.plan.name === name)?.seats ?? 0;
+  const storageOf = (name: string) => cards.find((card) => card.plan.name === name)?.storage ?? 0;
   return (
     <div className="grid gap-8">
       <PageIntro
@@ -48,19 +51,18 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
         detail={
           full
             ? `${current} includes ${allowance === 1 ? "1 seat" : `${allowance} seats`}. Another seat needs a larger plan.`
-            : "A personal copy is one seat. House and Room hold 50 and 100 seats. Custom starts above 100."
+            : `A personal copy is ${seatsOf("Personal") === 1 ? "1 seat" : `${seatsOf("Personal")} seats`}. House holds ${seatsOf("House")} seats and Room holds ${seatsOf("Room")} seats. Custom starts above 100.`
         }
       />
       {notice ? <p className="text-[14px] font-semibold text-ink">{notice}</p> : null}
       <PaidToast sessionId={paidSession} />
       <ul className="grid gap-3 sm:grid-cols-2">
-        {cards.map(({ plan, price, seats }) => {
+        {cards.map(({ plan, price, seats, storage }) => {
           const selected = plan.name === current;
           const count = seats ?? 101;
           const terms = termsFor(price);
           const buyingPersonal = owner && plan.name === "Personal" && current === "Personal" && !open && terms.length > 0;
           const intent = buyingPersonal ? "upgrade" : owner && count > allowance ? "upgrade" : owner && !open && seats != null && count < allowance ? "choose" : null;
-          const storage = storageGb(plan.name);
           const accent = planAccent(plan.name);
           return (
             <li key={plan.name} className="flex flex-col rounded-2xl bg-surface p-5" style={selected ? { boxShadow: `0 0 0 2px ${accent}` } : undefined}>
@@ -115,8 +117,8 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
       <p className="max-w-xl text-[14px] leading-6 text-muted">
         {owner
           ? until
-            ? `Personal includes 10 GB. House includes 100 GB. Room and Custom include 150 GB. Another plan can be chosen after ${until}.`
-            : "Personal includes 10 GB. House includes 100 GB. Room and Custom include 150 GB. The plan runs for the term that was paid."
+            ? `Personal includes ${storageOf("Personal")} GB. House includes ${storageOf("House")} GB. Room includes ${storageOf("Room")} GB. Custom includes ${storageOf("Custom")} GB. Another plan can be chosen after ${until}.`
+            : `Personal includes ${storageOf("Personal")} GB. House includes ${storageOf("House")} GB. Room includes ${storageOf("Room")} GB. Custom includes ${storageOf("Custom")} GB. The plan runs for the term that was paid.`
           : "The owner chooses the plan."}
       </p>
     </div>

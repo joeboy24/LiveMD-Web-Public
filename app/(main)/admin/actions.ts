@@ -15,6 +15,8 @@ export async function savePlanPrice(_state: PriceState, formData: FormData): Pro
   if (!(await readSystemAdmin())) return { error: "The system holds these prices.", saved: false, stamp: "" };
   const plan = String(formData.get("plan") ?? "");
   if (!plans.includes(plan as (typeof plans)[number])) return { error: "That plan is missing.", saved: false, stamp: "" };
+  const limits = limitsFrom(formData.get("seats"), formData.get("storage"));
+  if (limits.error || limits.seats == null || limits.storage == null) return { error: limits.error, saved: false, stamp: "" };
   const quarter = centsFrom(String(formData.get("quarter") ?? ""));
   const year = centsFrom(String(formData.get("year") ?? ""));
   if (String(formData.get("quarter") ?? "").trim() && quarter == null) return { error: "Enter the 3-month price in dollars.", saved: false, stamp: "" };
@@ -25,16 +27,32 @@ export async function savePlanPrice(_state: PriceState, formData: FormData): Pro
   await readPlanPrices();
   const sql = getSql();
   await sql`
-    insert into plan_prices (plan, quarter_cents, year_cents, currency)
-    values (${plan}, ${quarter}, ${year}, 'usd')
+    insert into plan_prices (plan, quarter_cents, year_cents, seats, storage_gb, currency)
+    values (${plan}, ${quarter}, ${year}, ${limits.seats}, ${limits.storage}, 'usd')
     on conflict (plan) do update
     set quarter_cents = excluded.quarter_cents,
         year_cents = excluded.year_cents,
+        seats = excluded.seats,
+        storage_gb = excluded.storage_gb,
         currency = 'usd'
   `;
   revalidatePath("/admin");
   revalidatePath("/organization/plan");
   return { error: null, saved: true, stamp: crypto.randomUUID() };
+}
+
+function limitsFrom(seatsValue: FormDataEntryValue | null, storageValue: FormDataEntryValue | null) {
+  const seats = wholeFrom(String(seatsValue ?? ""));
+  const storage = wholeFrom(String(storageValue ?? ""));
+  if (seats == null) return { error: "Enter the seats.", seats: null, storage: null };
+  if (storage == null) return { error: "Enter the storage in GB.", seats: null, storage: null };
+  return { error: "", seats, storage };
+}
+
+function wholeFrom(raw: string) {
+  const value = Number(raw.trim());
+  if (!Number.isInteger(value) || value < 1 || value > 100000) return null;
+  return value;
 }
 
 function centsFrom(raw: string) {

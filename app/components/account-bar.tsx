@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { FiChevronDown, FiEdit2, FiLogIn, FiLogOut, FiSettings, FiUser } from "react-icons/fi";
+import { FiChevronDown, FiEdit2, FiLogIn, FiLogOut, FiUser } from "react-icons/fi";
 import { signOut } from "../auth/actions";
 import type { SessionAccount } from "../auth/queries";
 import { clearPerformanceMode } from "../shows/performance-mode";
@@ -12,13 +12,11 @@ import { ThemeSwitch } from "./theme-switch";
 export function AccountBar({
   account,
   role = null,
-  systemAdmin = false,
   buttonName,
   menuName,
 }: {
   account: SessionAccount | null;
   role?: string | null;
-  systemAdmin?: boolean;
   buttonName: ReactNode;
   menuName: ReactNode;
 }) {
@@ -54,7 +52,7 @@ export function AccountBar({
         <button
           type="button"
           aria-label="Account"
-          data-help={systemAdmin ? "This seat. Profile, system, appearance, and sign out are here." : "This seat. Profile, appearance, and sign out are here."}
+          data-help="This seat. Profile, appearance, and sign out are here."
           aria-expanded={menu === "profile"}
           aria-haspopup="menu"
           onClick={() => setMenu((current) => (current === "profile" ? null : "profile"))}
@@ -62,7 +60,7 @@ export function AccountBar({
         >
           <FiUser aria-hidden className="size-4" />
         </button>
-        {menu === "profile" ? <ProfileMenu account={account} role={role} systemAdmin={systemAdmin} onClose={() => setMenu(null)} /> : null}
+        {menu === "profile" ? <ProfileMenu account={account} role={role} onClose={() => setMenu(null)} /> : null}
       </div>
     </div>
   );
@@ -89,12 +87,10 @@ function OrganizationMenu({ name, onClose }: { name: ReactNode; onClose: () => v
 function ProfileMenu({
   account,
   role,
-  systemAdmin,
   onClose,
 }: {
   account: SessionAccount | null;
   role: string | null;
-  systemAdmin: boolean;
   onClose: () => void;
 }) {
   const title = account ? account.name ?? account.email : "Account";
@@ -120,18 +116,6 @@ function ProfileMenu({
         >
           <FiEdit2 aria-hidden className="size-4" />
           Profile
-        </Link>
-      ) : null}
-      {account && systemAdmin ? (
-        <Link
-          href="/admin"
-          role="menuitem"
-          data-help="The amounts charged for House, Room, and Custom."
-          onClick={onClose}
-          className="flex items-center gap-3 border-t border-background px-4 py-3 text-[15px] font-semibold text-ink outline-none hover:bg-background focus-visible:bg-background"
-        >
-          <FiSettings aria-hidden className="size-4" />
-          System
         </Link>
       ) : null}
       <div className="border-t border-background px-4 py-3">

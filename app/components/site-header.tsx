@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { FiBell, FiCheckSquare, FiHelpCircle, FiMenu, FiMessageSquare, FiMusic, FiX } from "react-icons/fi";
+import { FiBell, FiCheckSquare, FiHelpCircle, FiMenu, FiMessageSquare, FiMusic, FiSettings, FiX } from "react-icons/fi";
 import { LuBuilding2 } from "react-icons/lu";
 import type { IconType } from "react-icons";
 import type { ReactNode } from "react";
@@ -14,6 +14,14 @@ const links: { href: string; label: string; icon: IconType; help: string; curren
   { href: "/", label: "Shows", icon: FiMusic, help: "The shows and the arrangement.", current: (pathname) => pathname === "/" },
   { href: "/organization", label: "Organization", icon: LuBuilding2, help: "The organization, its seats, and its plan.", current: (pathname) => pathname.startsWith("/organization") },
 ];
+
+const systemLink = {
+  href: "/admin",
+  label: "System",
+  icon: FiSettings,
+  help: "Prices, discounts, and the rest of the system.",
+  current: (pathname: string) => pathname.startsWith("/admin"),
+};
 
 const tools: { id: SideFeature; label: string; help: string; icon: IconType }[] = [
   { id: "notifications", label: "Notifications", help: "Open alerts for your seat.", icon: FiBell },
@@ -26,12 +34,14 @@ export function SiteHeader({
   accountBar,
   buttonName,
   menuName,
+  systemAdmin = false,
 }: {
   accountBar: ReactNode;
   buttonName: ReactNode;
   menuName: ReactNode;
+  systemAdmin?: boolean;
 }) {
-  return <HeaderFrame pathname={usePathname()} accountBar={accountBar} buttonName={buttonName} menuName={menuName} />;
+  return <HeaderFrame pathname={usePathname()} accountBar={accountBar} buttonName={buttonName} menuName={menuName} systemAdmin={systemAdmin} />;
 }
 
 function HeaderFrame({
@@ -39,13 +49,16 @@ function HeaderFrame({
   accountBar,
   buttonName,
   menuName,
+  systemAdmin,
 }: {
   pathname: string | null;
   accountBar: ReactNode;
   buttonName: ReactNode;
   menuName: ReactNode;
+  systemAdmin: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const siteLinks = systemAdmin ? [...links, systemLink] : links;
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
@@ -57,7 +70,7 @@ function HeaderFrame({
           type="button"
           aria-label="Menu"
           aria-expanded={open}
-          data-help="Open Shows, Organization, and the tools."
+          data-help={systemAdmin ? "Open Shows, Organization, System, and the tools." : "Open Shows, Organization, and the tools."}
           onClick={() => setOpen(true)}
           className="grid size-9 place-items-center rounded-xl text-ink outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-primary-hover md:hidden"
         >
@@ -74,13 +87,13 @@ function HeaderFrame({
         </Link>
         <span aria-hidden className="hidden h-6 w-px bg-surface-elevated md:block" />
         <nav className="hidden items-center gap-0.5 rounded-full bg-background p-0.5 ring-1 ring-surface-elevated md:flex" aria-label="Site">
-          {links.map((link) => (
+          {siteLinks.map((link) => (
             <SiteLink key={link.href} link={link} pathname={pathname} />
           ))}
         </nav>
         <div className="ml-auto">{accountBar}</div>
       </div>
-      {open ? <SideMenu pathname={pathname} onClose={() => setOpen(false)} /> : null}
+      {open ? <SideMenu pathname={pathname} links={siteLinks} onClose={() => setOpen(false)} /> : null}
     </header>
   );
 }
@@ -90,7 +103,7 @@ function SiteLink({
   pathname,
   onClose,
 }: {
-  link: (typeof links)[number];
+  link: (typeof links)[number] | typeof systemLink;
   pathname: string | null;
   onClose?: () => void;
 }) {
@@ -116,7 +129,15 @@ function SiteLink({
   );
 }
 
-function SideMenu({ pathname, onClose }: { pathname: string | null; onClose: () => void }) {
+function SideMenu({
+  pathname,
+  links: siteLinks,
+  onClose,
+}: {
+  pathname: string | null;
+  links: ((typeof links)[number] | typeof systemLink)[];
+  onClose: () => void;
+}) {
   const mark = useSyncExternalStore(subscribeNoticeCount, readNoticeCount, () => "none" as const);
   return (
     <div className="fixed inset-0 z-40 md:hidden">
@@ -134,7 +155,7 @@ function SideMenu({ pathname, onClose }: { pathname: string | null; onClose: () 
           </button>
         </div>
         <nav className="grid gap-1 px-3" aria-label="Site">
-          {links.map((link) => (
+          {siteLinks.map((link) => (
             <SiteLink key={link.href} link={link} pathname={pathname} onClose={onClose} />
           ))}
         </nav>

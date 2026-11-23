@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { readSystemAdmin } from "../admin/access";
 import { readAccess } from "../auth/access";
 import { readSessionAccount } from "../auth/queries";
 import { AccountBar } from "../components/account-bar";
@@ -24,7 +25,7 @@ export default function MainLayout({ children }: LayoutProps<"/">) {
 async function MainShell({ children }: { children: ReactNode }) {
   const account = await readSessionAccount();
   if (!account) redirect("/sign-in");
-  const access = await readAccess();
+  const [access, systemAdmin] = await Promise.all([readAccess(), readSystemAdmin()]);
   if (!access.web) {
     const path = (await headers()).get("x-livemd-path");
     if (path !== "/profile") return <PlayerSeat />;
@@ -38,6 +39,7 @@ async function MainShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SiteHeader
+        systemAdmin={systemAdmin}
         buttonName={<OrganizationLabel />}
         menuName={<OrganizationLabel />}
         accountBar={

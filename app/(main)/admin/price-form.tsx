@@ -14,6 +14,7 @@ export function PriceForm({
   quarter,
   year,
   seats = "",
+  storage = "",
   figure,
   detail,
   custom = false,
@@ -23,6 +24,7 @@ export function PriceForm({
   quarter: string;
   year: string;
   seats?: string;
+  storage?: string;
   figure: string;
   detail: string;
   custom?: boolean;
@@ -31,16 +33,19 @@ export function PriceForm({
   const [quarterDollars, setQuarterDollars] = useState(quarter);
   const [yearDollars, setYearDollars] = useState(year);
   const [seatCount, setSeatCount] = useState(seats);
+  const [storageCount, setStorageCount] = useState(storage);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "info"; stamp: number } | null>(null);
   const [state, action, pending] = useActionState(savePlanPrice, initial);
-  const changed = quarterDollars.trim() !== quarter || yearDollars.trim() !== year;
-  const ready = changed && (quarterDollars.trim().length > 0 || yearDollars.trim().length > 0);
+  const changed = quarterDollars.trim() !== quarter || yearDollars.trim() !== year || seatCount.trim() !== seats || storageCount.trim() !== storage;
+  const ready = changed && (quarterDollars.trim().length > 0 || yearDollars.trim().length > 0) && seatCount.trim().length > 0 && storageCount.trim().length > 0;
 
   useEffect(() => {
     setQuarterDollars(quarter);
     setYearDollars(year);
     setSeatCount(seats);
-  }, [quarter, year, seats]);
+    setStorageCount(storage);
+  }, [quarter, year, seats, storage]);
 
   useEffect(() => {
     if (!state.saved) return;
@@ -48,15 +53,15 @@ export function PriceForm({
   }, [state.saved, state.stamp]);
 
   async function commitSeats() {
-    if (seatCount.trim() === seats) return;
+    if (seatCount.trim() === seats || saving) return;
     if (!(Number(seatCount) > 100)) {
-      setSeatCount(seats);
       setToast({ message: "Custom should be more than 100.", tone: "info", stamp: Date.now() });
       return;
     }
+    setSaving(true);
     const result = await saveCustomSeats(seatCount);
+    setSaving(false);
     if (!result.saved) {
-      setSeatCount(seats);
       setToast({ message: result.error ?? "Custom should be more than 100.", tone: "info", stamp: Date.now() });
       return;
     }
@@ -75,7 +80,6 @@ export function PriceForm({
             aria-label="Seats"
             value={seatCount}
             onChange={(event) => setSeatCount(event.target.value.replace(/\D/g, ""))}
-            onBlur={() => void commitSeats()}
             style={{ width: `${Math.max((seatCount || "100+").length, 4) + 0.35}ch` }}
             className="border-b border-dashed border-muted bg-transparent text-[44px] leading-none font-bold tracking-tight text-ink outline-none placeholder:text-ink focus:border-solid focus:border-primary"
           />
@@ -90,6 +94,7 @@ export function PriceForm({
           </div>
           <p className="mt-3 text-[12px] font-semibold text-muted">Per month, then ×3 or ×12. Seats × Room price ÷ 100.</p>
         </div>
+        <SaveButton type="button" pending={saving} disabled={saving || seatCount.trim() === seats || seatCount.trim().length === 0} onClick={() => void commitSeats()} className="mt-4 self-start" />
         <Toast key={toast?.stamp} message={toast?.message ?? null} tone={toast?.tone} onDone={() => setToast(null)} />
       </div>
     );
@@ -98,13 +103,15 @@ export function PriceForm({
   return (
     <form action={action} className={className}>
       <input type="hidden" name="plan" value={plan} />
-      <p className="text-[44px] leading-none font-bold tracking-tight text-ink">{figure}</p>
+      <p className="text-[44px] leading-none font-bold tracking-tight text-ink">{seatCount || figure}</p>
       <p className="mt-2 text-[12px] font-semibold tracking-[0.16em] text-muted">SEATS</p>
       <p className="mt-3 text-[14px] leading-6 text-muted">{detail}</p>
       <div className="mt-auto pt-6">
         <div className="grid grid-cols-2 overflow-hidden rounded-2xl bg-background ring-1 ring-surface-elevated">
           <MoneyField label="3 months" name="quarter" value={quarterDollars} onChange={setQuarterDollars} />
           <MoneyField label="1 year" name="year" value={yearDollars} onChange={setYearDollars} divided />
+          <CountField label="Seats" name="seats" value={seatCount} onChange={setSeatCount} />
+          <CountField label="GB" name="storage" value={storageCount} onChange={setStorageCount} divided />
         </div>
         <p className="mt-3 text-[12px] font-semibold text-muted">Per month. Checkout charges ×3 for 3 months and ×12 for 1 year.</p>
       </div>
@@ -124,6 +131,24 @@ function PriceReadout({ label, value, divided = false }: { label: string; value:
         <span className={`text-[22px] leading-none font-semibold tracking-tight tabular-nums ${value ? "text-ink" : "text-muted"}`}>{value || "—"}</span>
       </span>
     </div>
+  );
+}
+
+function CountField({ label, name, value, onChange, divided = false }: { label: string; name: string; value: string; onChange: (value: string) => void; divided?: boolean }) {
+  return (
+    <label className={`group relative grid min-w-0 gap-1 border-t border-surface-elevated px-3.5 py-3 ${divided ? "border-l border-surface-elevated" : ""}`}>
+      <span className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">{label}</span>
+      <input
+        name={name}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        value={value}
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+        className="w-full bg-transparent text-[22px] leading-none font-semibold tracking-tight text-ink tabular-nums outline-none"
+      />
+      <span className="absolute inset-x-3.5 bottom-0 h-0.5 origin-left scale-x-0 bg-primary transition-transform group-focus-within:scale-x-100" />
+    </label>
   );
 }
 
