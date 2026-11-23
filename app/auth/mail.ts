@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 import { headers } from "next/headers";
-import { invitationLetter, signInLetter } from "./letter";
+import { invitationLetter, signInLetter, systemAccountLetter } from "./letter";
 
 export function mailConfigured() {
   return Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -62,6 +62,11 @@ export async function sendMail(to: string, subject: string, text: string, html: 
 
 export async function sendInvitation(email: string, orgName: string, role: string, url: string) {
   const letter = invitationLetter(orgName, role, url);
+  return sendMail(email, letter.subject, letter.text, letter.html);
+}
+
+export async function sendSystemAccount(email: string, name: string, role: string, password: string, url: string) {
+  const letter = systemAccountLetter({ name, email, role, password, url });
   return sendMail(email, letter.subject, letter.text, letter.html);
 }
 

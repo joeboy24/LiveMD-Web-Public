@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { accountIsClosed, readAccountRole, readSystemPages, readSystemRole } from "../../admin/access";
 import { pagesFrom, type SystemPage } from "../../admin/pages";
+import { appOrigin, mailConfigured, sendSystemAccount } from "../../auth/mail";
 import { hashPassword } from "../../auth/password";
 import { createPasswordAccount, findAccountByEmail, readSessionAccount } from "../../auth/queries";
 import { getSql } from "../../db";
@@ -149,18 +150,19 @@ export async function createSystemUser(_state: SystemUserState, formData: FormDa
   if (!(await holds("users"))) return { error: "The system holds these accounts.", saved: false, stamp: "" };
   const name = cleanName(formData.get("name"));
   const email = cleanEmail(formData.get("email"));
-  const password = String(formData.get("password") ?? "").slice(0, 128);
   const role = formData.get("role") === "admin" ? "admin" : "user";
   const pages = role === "admin" ? [] : pagesFrom(formData.getAll("page"));
   if (!name) return { error: "Enter a name.", saved: false, stamp: "" };
   if (!email) return { error: "Enter an email.", saved: false, stamp: "" };
-  if (password.length < 8) return { error: "Use at least 8 characters.", saved: false, stamp: "" };
+  if (!mailConfigured()) return { error: "Mail is not connected.", saved: false, stamp: "" };
   if (role === "admin" && (await readSystemRole()) !== "admin") return { error: "An admin adds another admin.", saved: false, stamp: "" };
   if (role === "user" && pages.length === 0) return { error: "Choose a page.", saved: false, stamp: "" };
   const sql = getSql();
   const seated = await sql`select id from seats where lower(email) = ${email} limit 1`;
   if (seated.length > 0) return { error: "That email already has a seat.", saved: false, stamp: "" };
   if (await findAccountByEmail(email)) return { error: "That email already has an account.", saved: false, stamp: "" };
+  const password = passwordFrom(formData.get("password"));
+  if (!password) return { error: "The password is missing.", saved: false, stamp: "" };
   const accountId = await createPasswordAccount(email, name, await hashPassword(password));
   if (role === "admin") {
     await sql.query(`insert into system_admins (account_id, role) values ($1, 'admin') on conflict (account_id) do nothing`, [accountId]);
@@ -169,6 +171,12 @@ export async function createSystemUser(_state: SystemUserState, formData: FormDa
       `insert into system_admins (account_id, permissions, role) values ($1, $2::text[], 'user') on conflict (account_id) do nothing`,
       [accountId, textArray(pages)],
     );
+  }
+  const mailed = await sendSystemAccount(email, name, role, password, `${await appOrigin()}/sign-in`);
+  if (mailed.error) {
+    await sql`delete from system_admins where account_id = ${accountId}`;
+    await sql`delete from accounts where id = ${accountId}`;
+    return { error: mailed.error, saved: false, stamp: "" };
   }
   revalidatePath("/admin/users");
   return { error: null, saved: true, stamp: crypto.randomUUID() };
@@ -206,6 +214,12 @@ export async function removeSystemUser(accountId: string) {
 
 async function holds(page: SystemPage) {
   return (await readSystemPages()).includes(page);
+}
+
+function passwordFrom(value: FormDataEntryValue | null) {
+  const password = String(value ?? "");
+  if (!/^[A-HJ-NP-Za-km-z2-9]{12}$/.test(password)) return "";
+  return password;
 }
 
 function textArray(pages: SystemPage[]) {

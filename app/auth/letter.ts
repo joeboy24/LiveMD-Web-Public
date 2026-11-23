@@ -54,6 +54,30 @@ export function receiptLetter(input: {
   };
 }
 
+export function systemAccountLetter(input: { name: string; email: string; role: string; password: string; url: string }): Letter {
+  const role = input.role === "admin" ? "Admin" : "User";
+  const note = "After you sign in, open Profile and update your password.";
+  return {
+    subject: "Your Live MD system account",
+    text: `Your Live MD system account is ready.\n\nName: ${input.name}\nEmail: ${input.email}\nRole: ${role}\nPassword: ${input.password}\n\nSign in:\n${input.url}\n\n${note}`,
+    html: card({
+      preheader: "Your Live MD system account is ready.",
+      eyebrow: "System",
+      title: "Your system account",
+      detail: "Use these details to sign in.",
+      action: "Sign in",
+      url: input.url,
+      facts: [
+        { label: "Name", value: input.name },
+        { label: "Email", value: input.email },
+        { label: "Role", value: role },
+        { label: "Password", value: input.password },
+      ],
+      footer: note,
+    }),
+  };
+}
+
 export function signInLetter(url: string): Letter {
   return {
     subject: "Sign in to Live MD",
@@ -69,8 +93,24 @@ export function signInLetter(url: string): Letter {
   };
 }
 
-function card(letter: { preheader: string; eyebrow: string; title: string; detail: string; action: string; url: string }) {
+function card(letter: {
+  preheader: string;
+  eyebrow: string;
+  title: string;
+  detail: string;
+  action: string;
+  url: string;
+  facts?: { label: string; value: string }[];
+  footer?: string;
+}) {
   const url = escapeHtml(letter.url);
+  const facts = (letter.facts ?? [])
+    .map(
+      (fact) =>
+        `<tr><td class="muted" style="padding:8px 0 0;font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#5C656E;">${escapeHtml(fact.label)}</td></tr><tr><td class="ink" style="padding:2px 0 0;font-size:15px;line-height:22px;color:#0B1116;">${escapeHtml(fact.value)}</td></tr>`,
+    )
+    .join("");
+  const footer = letter.footer ?? "This link expires in 15 minutes. If you were not expecting it, you can ignore this email.";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -122,6 +162,7 @@ function card(letter: { preheader: string; eyebrow: string; title: string; detai
             <p class="muted" style="margin:0;font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#5C656E;">${escapeHtml(letter.eyebrow)}</p>
             <h1 class="ink" style="margin:14px 0 0;font-size:28px;line-height:34px;font-weight:700;letter-spacing:-0.02em;color:#0B1116;">${escapeHtml(letter.title)}</h1>
             <p class="muted" style="margin:14px 0 0;font-size:15px;line-height:24px;color:#5C656E;">${escapeHtml(letter.detail)}</p>
+            ${facts ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:18px;">${facts}</table>` : ""}
             <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:28px;">
               <tr>
                 <td class="button" bgcolor="#076FBF" style="background:#076FBF;border-radius:14px;">
@@ -134,7 +175,7 @@ function card(letter: { preheader: string; eyebrow: string; title: string; detai
           </td>
         </tr>
         <tr>
-          <td class="muted" style="padding:16px 4px 0;font-family:${font};font-size:12px;line-height:18px;color:#5C656E;">This link expires in 15 minutes. If you were not expecting it, you can ignore this email.</td>
+          <td class="muted" style="padding:16px 4px 0;font-family:${font};font-size:12px;line-height:18px;color:#5C656E;">${escapeHtml(footer)}</td>
         </tr>
       </table>
     </td>

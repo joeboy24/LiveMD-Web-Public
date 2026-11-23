@@ -26,20 +26,20 @@ type SystemUser = {
 export function UserForm({ users, currentId, viewerIsAdmin }: { users: SystemUser[]; currentId: string; viewerIsAdmin: boolean }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(generatedPassword);
   const [role, setRole] = useState<SystemRole>("user");
   const [pages, setPages] = useState<SystemPage[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "info"; stamp: number } | null>(null);
   const [state, action, pending] = useActionState(createSystemUser, initial);
   const chosen = viewerIsAdmin ? role : "user";
-  const ready = name.trim().length > 0 && email.trim().length > 0 && password.length >= 8 && (chosen === "admin" || pages.length > 0);
+  const ready = name.trim().length > 0 && email.trim().length > 0 && password.length >= 12 && (chosen === "admin" || pages.length > 0);
 
   useEffect(() => {
     if (!state.saved) return;
     setName("");
     setEmail("");
-    setPassword("");
+    setPassword(generatedPassword());
     setPages([]);
     setRole("user");
     setToast({ message: "Saved.", tone: "success", stamp: Date.now() });
@@ -69,7 +69,7 @@ export function UserForm({ users, currentId, viewerIsAdmin }: { users: SystemUse
             ) : null}
             <Field label="Name" name="name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
             <Field label="Email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" />
-            <Field label="Password" name="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
+            <Field label="Password" name="password" type="password" value={password} readOnly autoComplete="off" />
           </div>
           <div>
             {chosen === "user" ? <PageChecks selected={pages} named onToggle={toggle} /> : <AdminAccess />}
@@ -271,6 +271,13 @@ function AdminAccess() {
       <p className="mt-2 text-[13px] leading-5 text-muted">An admin opens Prices, Discounts, and Users. The page checklist stays with users.</p>
     </div>
   );
+}
+
+function generatedPassword() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
 function pageSummary(pages: readonly SystemPage[]) {
