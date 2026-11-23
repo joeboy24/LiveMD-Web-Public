@@ -7,8 +7,10 @@ import { FiBell, FiCheckSquare, FiHelpCircle, FiMenu, FiMessageSquare, FiMusic, 
 import { LuBuilding2 } from "react-icons/lu";
 import type { IconType } from "react-icons";
 import type { ReactNode } from "react";
+import { NotificationSheet } from "./notification-sheet";
 import { readNoticeCount, subscribeNoticeCount } from "./notice-count";
 import { chooseFeature, type SideFeature } from "./panel";
+import { SupportWatch } from "./support-watch";
 
 const links: { href: string; label: string; icon: IconType; help: string; current: (pathname: string) => boolean }[] = [
   { href: "/", label: "Shows", icon: FiMusic, help: "The shows and the arrangement.", current: (pathname) => pathname === "/" },
@@ -19,7 +21,7 @@ const systemLink = {
   href: "/admin",
   label: "System",
   icon: FiSettings,
-  help: "Prices, discounts, organizations, and system users.",
+  help: "Prices, discounts, organizations, support, and system users.",
   current: (pathname: string) => pathname.startsWith("/admin"),
 };
 
@@ -36,14 +38,16 @@ export function SiteHeader({
   menuName,
   systemAdmin = false,
   systemOnly = false,
+  supportWatch = false,
 }: {
   accountBar: ReactNode;
   buttonName: ReactNode;
   menuName: ReactNode;
   systemAdmin?: boolean;
   systemOnly?: boolean;
+  supportWatch?: boolean;
 }) {
-  return <HeaderFrame pathname={usePathname()} accountBar={accountBar} buttonName={buttonName} menuName={menuName} systemAdmin={systemAdmin} systemOnly={systemOnly} />;
+  return <HeaderFrame pathname={usePathname()} accountBar={accountBar} buttonName={buttonName} menuName={menuName} systemAdmin={systemAdmin} systemOnly={systemOnly} supportWatch={supportWatch} />;
 }
 
 function HeaderFrame({
@@ -53,6 +57,7 @@ function HeaderFrame({
   menuName,
   systemAdmin,
   systemOnly,
+  supportWatch,
 }: {
   pathname: string | null;
   accountBar: ReactNode;
@@ -60,6 +65,7 @@ function HeaderFrame({
   menuName: ReactNode;
   systemAdmin: boolean;
   systemOnly: boolean;
+  supportWatch: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const siteLinks = systemOnly ? [systemLink] : systemAdmin ? [...links, systemLink] : links;
@@ -95,8 +101,13 @@ function HeaderFrame({
             <SiteLink key={link.href} link={link} pathname={pathname} />
           ))}
         </nav>
-        <div className="ml-auto">{accountBar}</div>
+        <div className="ml-auto flex items-center gap-2">
+          {supportWatch && systemOnly ? <SupportBell /> : null}
+          {supportWatch && !systemOnly ? <MobileBell /> : null}
+          {accountBar}
+        </div>
       </div>
+      {supportWatch ? <SupportWatch /> : null}
       {open ? <SideMenu pathname={pathname} links={siteLinks} tools={systemOnly ? [] : tools} onClose={() => setOpen(false)} /> : null}
     </header>
   );
@@ -190,6 +201,47 @@ function SideMenu({
           })}
         </div>
       </aside>
+    </div>
+  );
+}
+
+function MobileBell() {
+  const mark = useSyncExternalStore(subscribeNoticeCount, readNoticeCount, () => "none" as const);
+  return (
+    <button
+      type="button"
+      aria-label="Notifications"
+      data-help="Open alerts. A new support message beeps and shows here."
+      onClick={() => chooseFeature("notifications")}
+      className="relative grid size-9 place-items-center rounded-xl text-ink outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-primary-hover md:hidden"
+    >
+      <FiBell aria-hidden className="size-5" />
+      {mark !== "none" ? <span className={`absolute top-1.5 right-1.5 size-1.5 rounded-full ${mark === "system" ? "bg-[#e85d4c]" : "bg-[#25C290]"}`} /> : null}
+    </button>
+  );
+}
+
+function SupportBell() {
+  const mark = useSyncExternalStore(subscribeNoticeCount, readNoticeCount, () => "none" as const);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-label="Notifications"
+        aria-expanded={open}
+        data-help="Open alerts. A new support message beeps and shows here."
+        onClick={() => setOpen((current) => !current)}
+        className="relative grid size-9 place-items-center rounded-xl text-ink outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-primary-hover"
+      >
+        <FiBell aria-hidden className="size-5" />
+        {mark !== "none" ? <span className={`absolute top-1.5 right-1.5 size-1.5 rounded-full ${mark === "system" ? "bg-[#e85d4c]" : "bg-[#25C290]"}`} /> : null}
+      </button>
+      {open ? (
+        <div className="absolute top-full right-0 z-[70] mt-2 w-80 overflow-hidden rounded-2xl bg-surface shadow-[0_18px_40px_rgb(0_0_0/0.35)] ring-1 ring-surface-elevated">
+          <NotificationSheet />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@ export const systemPages = [
   { key: "prices", href: "/admin", label: "Prices", detail: "Plan prices, seats, storage, and the Personal trial." },
   { key: "discounts", href: "/admin/discounts", label: "Discounts", detail: "Codes that take money off a plan." },
   { key: "organizations", href: "/admin/organizations", label: "Organizations", detail: "Every organization, its seats, and its payments." },
+  { key: "support", href: "/admin/support", label: "Support", detail: "Messages sent to support, and a reply back to the sender." },
   { key: "users", href: "/admin/users", label: "Users", detail: "System accounts and the pages they can open." },
 ] as const;
 

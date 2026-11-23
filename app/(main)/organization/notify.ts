@@ -1,3 +1,5 @@
+import { messageLetter } from "../../auth/letter";
+import { sendMail } from "../../auth/mail";
 import { getSql } from "../../db";
 
 export type NoticeKind = "note" | "show" | "system";
@@ -38,6 +40,70 @@ async function createTable() {
     create index if not exists notifications_seat_created
     on notifications (seat_id, created_at desc)
   `;
+}
+
+let noticesReady: Promise<void> | null = null;
+
+export function ensureSystemNotices() {
+  noticesReady ??= ensureNotifications()
+    .then(async () => {
+      const sql = getSql();
+      await sql`
+        create table if not exists system_notices (
+          id uuid primary key default gen_random_uuid(),
+          account_id uuid not null references accounts (id),
+          title text not null,
+          body text not null default '',
+          read_at timestamptz,
+          created_at timestamptz not null default now()
+        )
+      `;
+      await sql`
+        create index if not exists system_notices_account_created
+        on system_notices (account_id, created_at desc)
+      `;
+    })
+    .catch((error: unknown) => {
+      noticesReady = null;
+      throw error;
+    });
+  return noticesReady;
+}
+
+export async function notifySupportStaff(input: {
+  title: string;
+  body: string;
+  organization: string;
+  message: string;
+  from: string;
+  exceptAccountId?: string;
+}): Promise<string[]> {
+  await ensureSystemNotices();
+  const sql = getSql();
+  await sql`alter table system_admins add column if not exists support_mail boolean not null default false`;
+  const staff = await sql`
+    select system_admins.account_id as id, system_admins.support_mail as "supportMail", accounts.name, accounts.email
+    from system_admins
+    join accounts on accounts.id = system_admins.account_id
+    where system_admins.deleted_at is null
+  `;
+  const letter = messageLetter(input.organization, "Support", input.title, input.message, input.from);
+  const mailed: string[] = [];
+  for (const row of staff) {
+    const accountId = String(row.id);
+    if (accountId === input.exceptAccountId) continue;
+    await sql`
+      insert into system_notices (account_id, title, body)
+      values (${accountId}, ${clip(input.title, 120)}, ${clip(input.body, 2000)})
+    `;
+    const email = row.email ? String(row.email) : "";
+    const flag = row.supportMail;
+    const wantsMail = flag === true || flag === "t" || flag === "true" || flag === 1;
+    if (!wantsMail || !email) continue;
+    const result = await sendMail(email, letter.subject, letter.text, letter.html);
+    if (!result.error) mailed.push(row.name ? String(row.name) : email);
+  }
+  return mailed;
 }
 
 export async function notifySeats(rows: NoticeRow[]) {

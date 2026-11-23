@@ -23,14 +23,16 @@ export function invitationLetter(orgName: string, role: string, url: string): Le
   };
 }
 
-export function messageLetter(orgName: string, group: string, subject: string, body: string): Letter {
+export function messageLetter(orgName: string, group: string, subject: string, body: string, from?: string): Letter {
   const name = orgName.trim();
   const room = group.trim();
+  const who = from?.trim() ?? "";
+  const line = who ? `${name} · ${who}` : `${name} · ${room}`;
   const paragraphs = body.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
   return {
     subject,
-    text: `${name} · ${room}\n\n${body}`,
-    html: messageCard(name, room, subject, paragraphs),
+    text: `${line}\n\n${body}`,
+    html: messageCard(line, subject, paragraphs),
   };
 }
 
@@ -185,7 +187,7 @@ function card(letter: {
 </html>`;
 }
 
-function messageCard(orgName: string, group: string, subject: string, paragraphs: string[]) {
+function messageCard(line: string, subject: string, paragraphs: string[]) {
   const body = paragraphs
     .map((paragraph) => `<p class="ink" style="margin:16px 0 0;font-size:15px;line-height:24px;color:#0B1116;">${escapeHtml(paragraph).replaceAll("\n", "<br>")}</p>`)
     .join("");
@@ -232,7 +234,7 @@ function messageCard(orgName: string, group: string, subject: string, paragraphs
         </tr>
         <tr>
           <td class="card" bgcolor="#FFFFFF" style="background:#FFFFFF;border-radius:0 0 18px 18px;padding:32px 36px 28px;font-family:${font};">
-            <p class="muted" style="margin:0;font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#5C656E;">${escapeHtml(orgName)} · ${escapeHtml(group)}</p>
+            <p class="muted" style="margin:0;font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#5C656E;">${escapeHtml(line)}</p>
             <h1 class="ink" style="margin:14px 0 0;font-size:28px;line-height:34px;font-weight:700;letter-spacing:-0.02em;color:#0B1116;">${escapeHtml(subject)}</h1>
             ${body}
           </td>

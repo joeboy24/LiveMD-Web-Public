@@ -163,13 +163,15 @@ export async function createSystemUser(_state: SystemUserState, formData: FormDa
   if (await findAccountByEmail(email)) return { error: "That email already has an account.", saved: false, stamp: "" };
   const password = passwordFrom(formData.get("password"));
   if (!password) return { error: "The password is missing.", saved: false, stamp: "" };
+  const supportMail = formData.get("supportMail") === "1";
   const accountId = await createPasswordAccount(email, name, await hashPassword(password));
+  await sql`alter table system_admins add column if not exists support_mail boolean not null default false`;
   if (role === "admin") {
-    await sql.query(`insert into system_admins (account_id, role) values ($1, 'admin') on conflict (account_id) do nothing`, [accountId]);
+    await sql.query(`insert into system_admins (account_id, role, support_mail) values ($1, 'admin', $2) on conflict (account_id) do nothing`, [accountId, supportMail]);
   } else {
     await sql.query(
-      `insert into system_admins (account_id, permissions, role) values ($1, $2::text[], 'user') on conflict (account_id) do nothing`,
-      [accountId, textArray(pages)],
+      `insert into system_admins (account_id, permissions, role, support_mail) values ($1, $2::text[], 'user', $3) on conflict (account_id) do nothing`,
+      [accountId, textArray(pages), supportMail],
     );
   }
   const mailed = await sendSystemAccount(email, name, role, password, `${await appOrigin()}/sign-in`);
@@ -193,6 +195,18 @@ export async function updateSystemUser(accountId: string, rawPages: string[]) {
   if (seated.length > 0) return { error: "That account holds a seat.", saved: false };
   const pages = pagesFrom(rawPages);
   await sql.query(`update system_admins set permissions = $2::text[] where account_id = $1`, [accountId, textArray(pages)]);
+  revalidatePath("/admin/users");
+  return { error: null, saved: true };
+}
+
+export async function updateSupportMail(accountId: string, on: boolean) {
+  const current = await readSessionAccount();
+  if (!current) return { error: "Sign in again.", saved: false };
+  if (current.id !== accountId && !(await holds("users"))) return { error: "The system holds these accounts.", saved: false };
+  if (await accountIsClosed(accountId)) return { error: "That account is deleted.", saved: false };
+  const sql = getSql();
+  await sql`alter table system_admins add column if not exists support_mail boolean not null default false`;
+  await sql`update system_admins set support_mail = ${on} where account_id = ${accountId} and deleted_at is null`;
   revalidatePath("/admin/users");
   return { error: null, saved: true };
 }

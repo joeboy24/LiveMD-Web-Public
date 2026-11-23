@@ -3,9 +3,10 @@
 import { denied } from "../../auth/access";
 import { messageLetter } from "../../auth/letter";
 import { mailConfigured, sendMail } from "../../auth/mail";
+import { readSessionAccount } from "../../auth/queries";
 import { getSql } from "../../db";
-import { notifySeats } from "./notify";
-import { readOrganization } from "./queries";
+import { notifySeats, notifySupportStaff } from "./notify";
+import { ensureSupportColumns, readOrganization } from "./queries";
 
 export type MessageState = { error: string | null; sent: number; stamp: string; support: boolean };
 
@@ -118,31 +119,34 @@ async function sendSupport(
   subject: string,
   body: string,
 ): Promise<MessageState> {
-  const admins = organization.seats.filter((seat) => seat.role === "Owner" || seat.role === "Music director");
-  const mailed = admins.filter((seat) => seat.email);
-  if (mailed.length === 0) return { error: "Support has no email yet.", sent: 0, stamp: "", support: true };
-  const letter = messageLetter(organization.name, "Support", subject, body);
+  await ensureSupportColumns();
   const sql = getSql();
-  const delivered: { id: string; name: string }[] = [];
-  for (const seat of mailed) {
-    const result = await sendMail(String(seat.email), letter.subject, letter.text, letter.html);
-    if (!result.error) delivered.push({ id: seat.id, name: String(seat.name) });
-  }
-  if (delivered.length === 0) return { error: "The email could not be sent.", sent: 0, stamp: "", support: true };
+  const account = await readSessionAccount();
+  const sender = organization.seats.find((seat) => seat.accountId === account?.id);
+  const senderName = account?.name || sender?.name || "Seat";
+  const senderEmail = account?.email || sender?.email || "";
+  const seat = sender?.role || "Seat";
+  const mailed = await notifySupportStaff({
+    title: subject,
+    body: `${senderName} · ${seat} · ${organization.name}\n${body}`,
+    organization: organization.name,
+    message: body,
+    from: `${senderName} · ${seat}`,
+    exceptAccountId: account?.id,
+  });
   await sql`
-    insert into messages (organization_id, group_name, subject, body, recipients)
-    values (${organization.id}, ${"Support"}, ${subject}, ${body}, ${JSON.stringify(delivered.map((seat) => seat.name))}::jsonb)
+    insert into messages (organization_id, group_name, subject, body, recipients, sender_name, sender_email)
+    values (
+      ${organization.id},
+      ${"Support"},
+      ${subject},
+      ${body},
+      ${JSON.stringify(mailed)}::jsonb,
+      ${senderName},
+      ${senderEmail}
+    )
   `;
-  await notifySeats(
-    admins.map((seat) => ({
-      organizationId: organization.id,
-      seatId: seat.id,
-      kind: "system" as const,
-      title: subject,
-      body,
-    })),
-  );
-  return { error: null, sent: delivered.length, stamp: crypto.randomUUID(), support: true };
+  return { error: null, sent: 1, stamp: crypto.randomUUID(), support: true };
 }
 
 function clip(value: unknown, max: number) {

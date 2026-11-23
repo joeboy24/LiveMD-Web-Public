@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { FiAlertTriangle, FiCheck, FiInfo } from "react-icons/fi";
 import type { IconType } from "react-icons";
 
-const stay = 4000;
+const stay = 5000;
 
 export type ToastTone = "success" | "warning" | "info";
 
@@ -39,7 +39,7 @@ export function Toast({
 
   if (!message) return null;
   return createPortal(
-    <div role="status" className="pointer-events-none fixed top-5 left-1/2 z-50 -translate-x-1/2">
+    <div role="status" className="pointer-events-none" style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 2147483000 }}>
       <style>{`
         @keyframes livemd-toast-in {
           from { opacity: 0; transform: translateY(-12px) scale(0.98); }

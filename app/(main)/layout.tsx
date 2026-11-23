@@ -30,10 +30,10 @@ async function MainShell({ children }: { children: ReactNode }) {
     await closeSession();
     redirect("/sign-in");
   }
-  const [access, systemAdmin] = await Promise.all([readAccess(), readSystemAdmin()]);
+  const [access, systemAdmin, pages] = await Promise.all([readAccess(), readSystemAdmin(), readSystemPages()]);
+  const supportWatch = systemAdmin;
   if (access.systemOnly) {
     const path = (await headers()).get("x-livemd-path") ?? "";
-    const pages = await readSystemPages();
     const page = systemPageFor(path);
     if (path !== "/profile" && (!page || !pages.includes(page.key))) redirect(firstSystemHref(pages));
     return (
@@ -41,6 +41,7 @@ async function MainShell({ children }: { children: ReactNode }) {
         <SiteHeader
           systemAdmin
           systemOnly
+          supportWatch={supportWatch}
           buttonName={<span>System</span>}
           menuName={<span>System</span>}
           accountBar={
@@ -68,6 +69,7 @@ async function MainShell({ children }: { children: ReactNode }) {
       <SiteHeader
         systemAdmin={systemAdmin}
         buttonName={<OrganizationLabel />}
+        supportWatch={supportWatch}
         menuName={<OrganizationLabel />}
         accountBar={
           <Suspense fallback={<AccountBar account={null} buttonName={<OrganizationLabel />} menuName={<OrganizationLabel />} />}>

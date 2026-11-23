@@ -7,7 +7,7 @@ import { Field } from "../../components/field";
 import { SaveButton } from "../../components/save-button";
 import { Toast } from "../../components/toast";
 import { Monogram } from "../organization/chrome";
-import { createSystemUser, removeSystemUser, updateSystemUser, type SystemUserState } from "./actions";
+import { createSystemUser, removeSystemUser, updateSupportMail, updateSystemUser, type SystemUserState } from "./actions";
 
 const initial: SystemUserState = { error: null, saved: false, stamp: "" };
 
@@ -21,6 +21,7 @@ type SystemUser = {
   deleted: boolean;
   role: SystemRole;
   pages: SystemPage[];
+  supportMail: boolean;
 };
 
 export function UserForm({ users, currentId, viewerIsAdmin }: { users: SystemUser[]; currentId: string; viewerIsAdmin: boolean }) {
@@ -29,6 +30,7 @@ export function UserForm({ users, currentId, viewerIsAdmin }: { users: SystemUse
   const [password, setPassword] = useState(generatedPassword);
   const [role, setRole] = useState<SystemRole>("user");
   const [pages, setPages] = useState<SystemPage[]>([]);
+  const [supportMail, setSupportMail] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "info"; stamp: number } | null>(null);
   const [state, action, pending] = useActionState(createSystemUser, initial);
@@ -42,6 +44,7 @@ export function UserForm({ users, currentId, viewerIsAdmin }: { users: SystemUse
     setPassword(generatedPassword());
     setPages([]);
     setRole("user");
+    setSupportMail(false);
     setToast({ message: "Saved.", tone: "success", stamp: Date.now() });
   }, [state.saved, state.stamp]);
 
@@ -70,6 +73,7 @@ export function UserForm({ users, currentId, viewerIsAdmin }: { users: SystemUse
             <Field label="Name" name="name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
             <Field label="Email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" />
             <Field label="Password" name="password" type="password" value={password} readOnly autoComplete="off" />
+            <MailCheck checked={supportMail} named onChange={setSupportMail} />
           </div>
           <div>
             {chosen === "user" ? <PageChecks selected={pages} named onToggle={toggle} /> : <AdminAccess />}
@@ -215,7 +219,8 @@ function Person({
       {open ? (
         <div className="border-t border-surface-elevated px-4 pt-4 pb-4">
           {user.deleted || user.role === "admin" ? null : <PageChecks selected={pages} disabled={locked} onToggle={(key) => void toggle(key)} />}
-          <p className={`${user.deleted || user.role === "admin" ? "" : "mt-3 "}text-[13px] leading-5 text-muted`}>{note(user)}</p>
+          {user.deleted ? null : <AccountMail user={user} onNotice={onNotice} />}
+          <p className={`${user.deleted ? "" : "mt-3 "}text-[13px] leading-5 text-muted`}>{note(user)}</p>
         </div>
       ) : null}
     </li>
@@ -263,12 +268,58 @@ function PageChecks({
   );
 }
 
+function MailCheck({ checked, named = false, onChange }: { checked: boolean; named?: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-background px-3 py-3">
+      <input
+        type="checkbox"
+        name={named ? "supportMail" : undefined}
+        value="1"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 size-4 shrink-0 accent-[#076FBF]"
+      />
+      <span>
+        <span className="block text-[14px] font-semibold text-ink">Receive support notifications</span>
+        <span className="block text-[13px] leading-5 text-muted">Email when a support message arrives. Every system account still sees it in the app.</span>
+      </span>
+    </label>
+  );
+}
+
+function AccountMail({
+  user,
+  onNotice,
+}: {
+  user: SystemUser;
+  onNotice: (toast: { message: string; tone: "success" | "info"; stamp: number }) => void;
+}) {
+  const [on, setOn] = useState(user.supportMail);
+
+  async function change(next: boolean) {
+    setOn(next);
+    const result = await updateSupportMail(user.id, next);
+    if (!result.saved) {
+      setOn(on);
+      onNotice({ message: result.error ?? "That account is missing.", tone: "info", stamp: Date.now() });
+      return;
+    }
+    onNotice({ message: "Saved.", tone: "success", stamp: Date.now() });
+  }
+
+  return (
+    <div className={user.role === "admin" ? "" : "mt-3"}>
+      <MailCheck checked={on} onChange={(next) => void change(next)} />
+    </div>
+  );
+}
+
 function AdminAccess() {
   return (
     <div>
       <p className="text-[11px] font-semibold tracking-[0.16em] text-muted">PAGES</p>
       <p className="mt-2 rounded-xl bg-background px-3 py-3 text-[14px] font-semibold text-ink">All pages</p>
-      <p className="mt-2 text-[13px] leading-5 text-muted">An admin opens Prices, Discounts, and Users. The page checklist stays with users.</p>
+      <p className="mt-2 text-[13px] leading-5 text-muted">An admin opens every system page. The page checklist stays with users.</p>
     </div>
   );
 }

@@ -7,7 +7,17 @@ import { setNoticeCount } from "./notice-count";
 
 export function NotificationSheet() {
   const [page, setPage] = useState(0);
+  const [refresh, setRefresh] = useState(0);
   const [data, setData] = useState<NoticePage | null>(null);
+
+  useEffect(() => {
+    function incoming() {
+      setPage(0);
+      setRefresh((current) => current + 1);
+    }
+    window.addEventListener("livemd-notices", incoming);
+    return () => window.removeEventListener("livemd-notices", incoming);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -19,7 +29,7 @@ export function NotificationSheet() {
     return () => {
       live = false;
     };
-  }, [page]);
+  }, [page, refresh]);
 
   const notices = data?.notices ?? [];
   const pages = data?.pages ?? 1;
@@ -75,7 +85,7 @@ function NoticeRow({ notice }: { notice: Notice }) {
   return (
     <li className="border-t border-surface-elevated py-2 first:border-t-0">
       <p className="flex items-center gap-1.5">
-        {read ? null : <span className={`size-1.5 shrink-0 rounded-full ${notice.label === "System" ? "bg-[#e85d4c]" : "bg-[#25C290]"}`} />}
+        {read ? null : <span className={`size-1.5 shrink-0 rounded-full ${notice.label === "System" || notice.label === "Support" ? "bg-[#e85d4c]" : "bg-[#25C290]"}`} />}
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{notice.title}</span>
       </p>
       <div className="flex items-center justify-between gap-2">

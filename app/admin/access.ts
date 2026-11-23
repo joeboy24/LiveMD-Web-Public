@@ -24,6 +24,7 @@ async function createAdminTable() {
   await sql.query(`alter table system_admins add column if not exists permissions text[]`);
   await sql.query(`alter table system_admins add column if not exists deleted_at timestamptz`);
   await sql.query(`alter table system_admins add column if not exists role text`);
+  await sql.query(`alter table system_admins add column if not exists support_mail boolean not null default false`);
   await sql.query(`
     update system_admins
     set role = 'admin'
@@ -72,6 +73,7 @@ export type SystemUser = {
   deleted: boolean;
   role: SystemRole;
   pages: SystemPage[];
+  supportMail: boolean;
 };
 
 const everyPage = systemPages.map((page) => page.key);
@@ -145,7 +147,7 @@ export async function readSystemUsers(): Promise<SystemUser[]> {
   const sql = getSql();
   const rows = await sql`
     select accounts.id, accounts.name, accounts.email, system_admins.permissions, system_admins.role,
-      system_admins.deleted_at as "deletedAt",
+      system_admins.support_mail as "supportMail", system_admins.deleted_at as "deletedAt",
       exists(select 1 from seats where seats.account_id = accounts.id) as seated
     from system_admins
     join accounts on accounts.id = system_admins.account_id
@@ -159,6 +161,6 @@ export async function readSystemUsers(): Promise<SystemUser[]> {
     const deleted = Boolean(row.deletedAt);
     const role: SystemRole = row.role === "admin" ? "admin" : "user";
     const pages = deleted ? [] : role === "admin" ? everyPage : (pageList(row.permissions) ?? []);
-    return [{ id, name: row.name ? String(row.name) : email, email, seated, deleted, role, pages }];
+    return [{ id, name: row.name ? String(row.name) : email, email, seated, deleted, role, pages, supportMail: truthy(row.supportMail) }];
   });
 }

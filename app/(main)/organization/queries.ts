@@ -23,6 +23,23 @@ export type OrganizationRecord = {
 
 let ready: Promise<void> | null = null;
 
+export function ensureSupportColumns() {
+  const sql = getSql();
+  return sql`alter table messages add column if not exists sender_name text`.then(() =>
+    sql`alter table messages add column if not exists sender_email text`,
+  ).then(() =>
+    sql`
+      create table if not exists support_replies (
+        id uuid primary key default gen_random_uuid(),
+        message_id uuid not null references messages (id),
+        body text not null,
+        author_name text not null,
+        created_at timestamptz not null default now()
+      )
+    `,
+  );
+}
+
 export function ensureOrganizationTables() {
   ready ??= migrate().catch((error: unknown) => {
     ready = null;
@@ -112,6 +129,17 @@ async function migrate() {
     )
   `;
   await sql`alter table messages add column if not exists body text not null default ''`;
+  await sql`alter table messages add column if not exists sender_name text`;
+  await sql`alter table messages add column if not exists sender_email text`;
+  await sql`
+    create table if not exists support_replies (
+      id uuid primary key default gen_random_uuid(),
+      message_id uuid not null references messages (id),
+      body text not null,
+      author_name text not null,
+      created_at timestamptz not null default now()
+    )
+  `;
   await sql`
     create table if not exists notifications (
       id uuid primary key default gen_random_uuid(),
