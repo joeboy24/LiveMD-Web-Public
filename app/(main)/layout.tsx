@@ -1,9 +1,10 @@
 import { Suspense, type ReactNode } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { readSystemAdmin } from "../admin/access";
+import { accountIsClosed, readSystemAdmin, readSystemPages } from "../admin/access";
+import { firstSystemHref, systemPageFor } from "../admin/pages";
 import { readAccess } from "../auth/access";
-import { readSessionAccount } from "../auth/queries";
+import { closeSession, readSessionAccount } from "../auth/queries";
 import { AccountBar } from "../components/account-bar";
 import { CurrentAccount } from "../components/current-account";
 import { Workspace } from "../components/workspace";
@@ -25,7 +26,33 @@ export default function MainLayout({ children }: LayoutProps<"/">) {
 async function MainShell({ children }: { children: ReactNode }) {
   const account = await readSessionAccount();
   if (!account) redirect("/sign-in");
+  if (await accountIsClosed(account.id)) {
+    await closeSession();
+    redirect("/sign-in");
+  }
   const [access, systemAdmin] = await Promise.all([readAccess(), readSystemAdmin()]);
+  if (access.systemOnly) {
+    const path = (await headers()).get("x-livemd-path") ?? "";
+    const pages = await readSystemPages();
+    const page = systemPageFor(path);
+    if (path !== "/profile" && (!page || !pages.includes(page.key))) redirect(firstSystemHref(pages));
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <SiteHeader
+          systemAdmin
+          systemOnly
+          buttonName={<span>System</span>}
+          menuName={<span>System</span>}
+          accountBar={
+            <Suspense fallback={<AccountBar account={null} showOrganization={false} buttonName={<span>System</span>} menuName={<span>System</span>} />}>
+              <CurrentAccount showOrganization={false} buttonName={<span>System</span>} menuName={<span>System</span>} />
+            </Suspense>
+          }
+        />
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6">{children}</main>
+      </div>
+    );
+  }
   if (!access.web) {
     const path = (await headers()).get("x-livemd-path");
     if (path !== "/profile") return <PlayerSeat />;

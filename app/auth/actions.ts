@@ -3,6 +3,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { checkPassword, hashPassword } from "./password";
+import { accountIsClosed, accountIsSystemOnly, readAccountPages } from "../admin/access";
+import { firstSystemHref } from "../admin/pages";
 import { attachSeats, closeSession, createPasswordAccount, findAccountByEmail, openSession, sessionCookie, setAccountPassword } from "./queries";
 
 export type SignInState = {
@@ -19,6 +21,7 @@ export async function signInWithPassword(_state: SignInState, formData: FormData
   if (!account?.passwordHash) return { error: "That email or password is wrong." };
   const matches = await checkPassword(password, account.passwordHash);
   if (!matches) return { error: "That email or password is wrong." };
+  if (await accountIsClosed(account.id)) return { error: "This account is closed." };
   await startSession(account.id);
   return { error: null };
 }
@@ -52,6 +55,7 @@ async function startSession(accountId: string) {
   const token = await openSession(accountId);
   const jar = await cookies();
   jar.set(sessionCookie.name, token, sessionCookie.options);
+  if (await accountIsSystemOnly(accountId)) redirect(firstSystemHref(await readAccountPages(accountId)));
   redirect("/");
 }
 

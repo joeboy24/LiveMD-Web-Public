@@ -62,7 +62,9 @@ export async function listShows(): Promise<Show[]> {
 
 export async function publishedShowRows() {
   const sql = getSql();
+  const account = await readSessionAccount();
   const orgId = await organizationId();
+  if (account && !orgId) return [];
   const rows = orgId
     ? await sql`
         select id, title, performed_on::text as "performedOn", published_at::text as "publishedAt", published_snapshot as snapshot,

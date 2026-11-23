@@ -7,7 +7,7 @@ import { Field } from "../components/field";
 
 const initial: SignInState = { error: null };
 
-export function SignInForm({ expired }: { expired: boolean }) {
+export function SignInForm({ expired, closed = false }: { expired: boolean; closed?: boolean }) {
   const [mode, setMode] = useState<"sign-in" | "create">("sign-in");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

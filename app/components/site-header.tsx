@@ -19,7 +19,7 @@ const systemLink = {
   href: "/admin",
   label: "System",
   icon: FiSettings,
-  help: "Prices, discounts, and the rest of the system.",
+  help: "Prices, discounts, and system users.",
   current: (pathname: string) => pathname.startsWith("/admin"),
 };
 
@@ -35,13 +35,15 @@ export function SiteHeader({
   buttonName,
   menuName,
   systemAdmin = false,
+  systemOnly = false,
 }: {
   accountBar: ReactNode;
   buttonName: ReactNode;
   menuName: ReactNode;
   systemAdmin?: boolean;
+  systemOnly?: boolean;
 }) {
-  return <HeaderFrame pathname={usePathname()} accountBar={accountBar} buttonName={buttonName} menuName={menuName} systemAdmin={systemAdmin} />;
+  return <HeaderFrame pathname={usePathname()} accountBar={accountBar} buttonName={buttonName} menuName={menuName} systemAdmin={systemAdmin} systemOnly={systemOnly} />;
 }
 
 function HeaderFrame({
@@ -50,15 +52,17 @@ function HeaderFrame({
   buttonName,
   menuName,
   systemAdmin,
+  systemOnly,
 }: {
   pathname: string | null;
   accountBar: ReactNode;
   buttonName: ReactNode;
   menuName: ReactNode;
   systemAdmin: boolean;
+  systemOnly: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const siteLinks = systemAdmin ? [...links, systemLink] : links;
+  const siteLinks = systemOnly ? [systemLink] : systemAdmin ? [...links, systemLink] : links;
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
@@ -70,13 +74,13 @@ function HeaderFrame({
           type="button"
           aria-label="Menu"
           aria-expanded={open}
-          data-help={systemAdmin ? "Open Shows, Organization, System, and the tools." : "Open Shows, Organization, and the tools."}
+          data-help={systemOnly ? "Open System." : systemAdmin ? "Open Shows, Organization, System, and the tools." : "Open Shows, Organization, and the tools."}
           onClick={() => setOpen(true)}
           className="grid size-9 place-items-center rounded-xl text-ink outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-primary-hover md:hidden"
         >
           <FiMenu aria-hidden className="size-5" />
         </button>
-        <Link href="/" data-help="Live MD. Opens the shows." className="flex items-center gap-2.5 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary-hover">
+        <Link href={systemOnly ? "/admin" : "/"} data-help={systemOnly ? "Live MD. Opens the system." : "Live MD. Opens the shows."} className="flex items-center gap-2.5 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary-hover">
           <span className="relative hidden size-9 place-items-center overflow-hidden rounded-xl bg-primary text-white shadow-[0_8px_18px_rgb(7_111_191/0.45)] md:grid">
             <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgb(255_255_255/0.28),transparent_58%)]" />
             <Waveform />
@@ -93,7 +97,7 @@ function HeaderFrame({
         </nav>
         <div className="ml-auto">{accountBar}</div>
       </div>
-      {open ? <SideMenu pathname={pathname} links={siteLinks} onClose={() => setOpen(false)} /> : null}
+      {open ? <SideMenu pathname={pathname} links={siteLinks} tools={systemOnly ? [] : tools} onClose={() => setOpen(false)} /> : null}
     </header>
   );
 }
@@ -132,10 +136,12 @@ function SiteLink({
 function SideMenu({
   pathname,
   links: siteLinks,
+  tools: menuTools,
   onClose,
 }: {
   pathname: string | null;
   links: ((typeof links)[number] | typeof systemLink)[];
+  tools: typeof tools;
   onClose: () => void;
 }) {
   const mark = useSyncExternalStore(subscribeNoticeCount, readNoticeCount, () => "none" as const);
@@ -159,9 +165,9 @@ function SideMenu({
             <SiteLink key={link.href} link={link} pathname={pathname} onClose={onClose} />
           ))}
         </nav>
-        <p className="px-4 pt-5 pb-1 text-[11px] font-semibold tracking-[0.16em] text-muted">TOOLS</p>
+        {menuTools.length > 0 ? <p className="px-4 pt-5 pb-1 text-[11px] font-semibold tracking-[0.16em] text-muted">TOOLS</p> : null}
         <div className="grid gap-1 px-3">
-          {tools.map((tool) => {
+          {menuTools.map((tool) => {
             const Icon = tool.icon;
             return (
               <button

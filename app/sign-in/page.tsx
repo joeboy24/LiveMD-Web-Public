@@ -19,6 +19,7 @@ async function SignInBody({ searchParams }: { searchParams: Promise<{ error?: st
   if (account) redirect("/");
   const query = await searchParams;
   const expired = query.error === "expired";
+  const closed = query.error === "closed";
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <SignInAppearance />
@@ -46,7 +47,7 @@ async function SignInBody({ searchParams }: { searchParams: Promise<{ error?: st
           </div>
           <p className="mt-4 text-center text-xs leading-6 text-muted">Sign in to open the charts, tems and seats.</p>
           <div className="mt-8">
-            <SignInForm expired={expired} />
+            <SignInForm expired={expired} closed={closed} />
           </div>
           <p className="mt-8 text-center text-[13px] text-muted">The player stays with the room.</p>
         </div>

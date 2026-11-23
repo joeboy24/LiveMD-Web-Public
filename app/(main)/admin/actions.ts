@@ -1,18 +1,23 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { readSystemAdmin } from "../../admin/access";
+import { accountIsClosed, readAccountRole, readSystemPages, readSystemRole } from "../../admin/access";
+import { pagesFrom, type SystemPage } from "../../admin/pages";
+import { hashPassword } from "../../auth/password";
+import { createPasswordAccount, findAccountByEmail, readSessionAccount } from "../../auth/queries";
 import { getSql } from "../../db";
 import { deleteDiscount, readDiscounts, readPlanPrices, writeCustomSeats, writeDiscount, type DiscountKind } from "../organization/billing";
 
 export type PriceState = { error: string | null; saved: boolean; stamp: string };
+
+export type SystemUserState = { error: string | null; saved: boolean; stamp: string };
 
 export type DiscountState = { error: string | null; saved: boolean; stamp: string; code: string };
 
 const plans = ["Personal", "House", "Room"] as const;
 
 export async function savePlanPrice(_state: PriceState, formData: FormData): Promise<PriceState> {
-  if (!(await readSystemAdmin())) return { error: "The system holds these prices.", saved: false, stamp: "" };
+  if (!(await holds("prices"))) return { error: "The system holds these prices.", saved: false, stamp: "" };
   const plan = String(formData.get("plan") ?? "");
   if (!plans.includes(plan as (typeof plans)[number])) return { error: "That plan is missing.", saved: false, stamp: "" };
   const limits = limitsFrom(formData.get("seats"), formData.get("storage"));
@@ -67,7 +72,7 @@ function centsFrom(raw: string) {
 
 export async function saveDiscount(_state: DiscountState, formData: FormData): Promise<DiscountState> {
   const denied = { error: "The system holds these prices.", saved: false, stamp: "", code: "" };
-  if (!(await readSystemAdmin())) return denied;
+  if (!(await holds("discounts"))) return denied;
   const raw = String(formData.get("code") ?? "").trim();
   const typed = codeFrom(raw);
   if (raw && !typed) return { error: "Use up to 7 letters and numbers.", saved: false, stamp: "", code: "" };
@@ -84,7 +89,7 @@ export async function saveDiscount(_state: DiscountState, formData: FormData): P
 }
 
 export async function removeDiscount(raw: string) {
-  if (!(await readSystemAdmin())) return { error: "The system holds these prices.", saved: false };
+  if (!(await holds("discounts"))) return { error: "The system holds these prices.", saved: false };
   const code = codeFrom(raw);
   if (!code) return { error: "That code is missing.", saved: false };
   await deleteDiscount(code);
@@ -130,11 +135,90 @@ function generatedCode() {
 }
 
 export async function saveCustomSeats(raw: string) {
-  if (!(await readSystemAdmin())) return { error: "The system holds these prices.", saved: false };
+  if (!(await holds("prices"))) return { error: "The system holds these prices.", saved: false };
   const seats = seatsFrom(raw);
   if (seats == null) return { error: "Custom should be more than 100.", saved: false };
   await writeCustomSeats(seats);
   return { error: null, saved: true };
+}
+
+export async function createSystemUser(_state: SystemUserState, formData: FormData): Promise<SystemUserState> {
+  if (!(await holds("users"))) return { error: "The system holds these accounts.", saved: false, stamp: "" };
+  const name = cleanName(formData.get("name"));
+  const email = cleanEmail(formData.get("email"));
+  const password = String(formData.get("password") ?? "").slice(0, 128);
+  const role = formData.get("role") === "admin" ? "admin" : "user";
+  const pages = role === "admin" ? [] : pagesFrom(formData.getAll("page"));
+  if (!name) return { error: "Enter a name.", saved: false, stamp: "" };
+  if (!email) return { error: "Enter an email.", saved: false, stamp: "" };
+  if (password.length < 8) return { error: "Use at least 8 characters.", saved: false, stamp: "" };
+  if (role === "admin" && (await readSystemRole()) !== "admin") return { error: "An admin adds another admin.", saved: false, stamp: "" };
+  if (role === "user" && pages.length === 0) return { error: "Choose a page.", saved: false, stamp: "" };
+  const sql = getSql();
+  const seated = await sql`select id from seats where lower(email) = ${email} limit 1`;
+  if (seated.length > 0) return { error: "That email already has a seat.", saved: false, stamp: "" };
+  if (await findAccountByEmail(email)) return { error: "That email already has an account.", saved: false, stamp: "" };
+  const accountId = await createPasswordAccount(email, name, await hashPassword(password));
+  if (role === "admin") {
+    await sql.query(`insert into system_admins (account_id, role) values ($1, 'admin') on conflict (account_id) do nothing`, [accountId]);
+  } else {
+    await sql.query(
+      `insert into system_admins (account_id, permissions, role) values ($1, $2::text[], 'user') on conflict (account_id) do nothing`,
+      [accountId, textArray(pages)],
+    );
+  }
+  revalidatePath("/admin/users");
+  return { error: null, saved: true, stamp: crypto.randomUUID() };
+}
+
+export async function updateSystemUser(accountId: string, rawPages: string[]) {
+  if (!(await holds("users"))) return { error: "The system holds these accounts.", saved: false };
+  const current = await readSessionAccount();
+  if (!current || current.id === accountId) return { error: "Keep your own pages.", saved: false };
+  if (await accountIsClosed(accountId)) return { error: "That account is deleted.", saved: false };
+  if ((await readAccountRole(accountId)) === "admin") return { error: "An admin keeps every page.", saved: false };
+  const sql = getSql();
+  const seated = await sql`select id from seats where account_id = ${accountId} limit 1`;
+  if (seated.length > 0) return { error: "That account holds a seat.", saved: false };
+  const pages = pagesFrom(rawPages);
+  await sql.query(`update system_admins set permissions = $2::text[] where account_id = $1`, [accountId, textArray(pages)]);
+  revalidatePath("/admin/users");
+  return { error: null, saved: true };
+}
+
+export async function removeSystemUser(accountId: string) {
+  if (!(await holds("users"))) return { error: "The system holds these accounts.", saved: false };
+  const current = await readSessionAccount();
+  if (!current || current.id === accountId) return { error: "Keep your own system access.", saved: false };
+  const sql = getSql();
+  if (await accountIsClosed(accountId)) return { error: "That account is already deleted.", saved: false };
+  if ((await readAccountRole(accountId)) === "admin" && (await readSystemRole()) !== "admin") return { error: "A user cannot delete an admin.", saved: false };
+  const seated = await sql`select id from seats where account_id = ${accountId} limit 1`;
+  if (seated.length > 0) return { error: "That account holds a seat.", saved: false };
+  await sql`update sessions set expires_at = now() where account_id = ${accountId} and expires_at > now()`;
+  await sql.query(`update system_admins set deleted_at = now(), permissions = '{}'::text[] where account_id = $1 and deleted_at is null`, [accountId]);
+  revalidatePath("/admin/users");
+  return { error: null, saved: true };
+}
+
+async function holds(page: SystemPage) {
+  return (await readSystemPages()).includes(page);
+}
+
+function textArray(pages: SystemPage[]) {
+  return `{${pages.join(",")}}`;
+}
+
+function cleanName(value: FormDataEntryValue | null) {
+  const name = String(value ?? "").trim().replace(/\s+/g, " ");
+  if (!name || name.length > 80) return "";
+  return name;
+}
+
+function cleanEmail(value: FormDataEntryValue | null) {
+  const email = String(value ?? "").trim().toLowerCase();
+  if (!email || email.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "";
+  return email;
 }
 
 function seatsFrom(raw: string) {

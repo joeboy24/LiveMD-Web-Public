@@ -12,11 +12,13 @@ import { ThemeSwitch } from "./theme-switch";
 export function AccountBar({
   account,
   role = null,
+  showOrganization = true,
   buttonName,
   menuName,
 }: {
   account: SessionAccount | null;
   role?: string | null;
+  showOrganization?: boolean;
   buttonName: ReactNode;
   menuName: ReactNode;
 }) {

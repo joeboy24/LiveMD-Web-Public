@@ -2,14 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { systemPages, type SystemPage } from "../../admin/pages";
 
-const links = [
-  { href: "/admin", label: "Prices" },
-  { href: "/admin/discounts", label: "Discounts" },
-];
-
-export function AdminNav() {
+export function AdminNav({ pages }: { pages: SystemPage[] }) {
   const pathname = usePathname();
+  const links = systemPages.filter((page) => pages.includes(page.key));
   return (
     <nav aria-label="System" className="flex gap-6 border-b border-surface-elevated">
       {links.map((link) => {

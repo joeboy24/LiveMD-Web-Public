@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { accountIsClosed } from "../../admin/access";
 import { consumeSignInLink, openSession, sessionCookie } from "../../auth/queries";
 
 export async function GET(request: Request) {

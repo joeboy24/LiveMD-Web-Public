@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { readSystemAdmin } from "../admin/access";
 import { readOrganization } from "../(main)/organization/queries";
 import { readSessionAccount } from "./queries";
 
@@ -13,6 +14,7 @@ export type SeatAccess = {
   organize: boolean;
   publish: boolean;
   web: boolean;
+  systemOnly: boolean;
   layers: readonly AudioLayer[];
 };
 
@@ -20,18 +22,18 @@ const everyLayer = ["stem", "guide", "track"] as const;
 
 export function accessFor(role: string | null, signedIn = false): SeatAccess {
   if (role === "Musician") {
-    return { role, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: false, web: true, layers: everyLayer };
+    return { role, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: false, web: true, systemOnly: false, layers: everyLayer };
   }
   if (role === "Playback operator") {
-    return { role, prepare: false, chart: false, transport: false, stage: false, organize: false, publish: false, web: false, layers: ["stem", "guide"] };
+    return { role, prepare: false, chart: false, transport: false, stage: false, organize: false, publish: false, web: false, systemOnly: false, layers: ["stem", "guide"] };
   }
   if (role === "Owner" || role === "Music director") {
-    return { role, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: true, web: true, layers: everyLayer };
+    return { role, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: true, web: true, systemOnly: false, layers: everyLayer };
   }
   if (signedIn) {
-    return { role: null, prepare: false, chart: false, transport: false, stage: false, organize: true, publish: false, web: true, layers: [] };
+    return { role: null, prepare: false, chart: false, transport: false, stage: false, organize: true, publish: false, web: true, systemOnly: false, layers: [] };
   }
-  return { role: null, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: true, web: true, layers: everyLayer };
+  return { role: null, prepare: true, chart: true, transport: true, stage: true, organize: true, publish: true, web: true, systemOnly: false, layers: everyLayer };
 }
 
 export function keepsAudio(
@@ -53,7 +55,9 @@ export const readAccess = cache(async (): Promise<SeatAccess> => {
   if (!account) return accessFor(null, false);
   const organization = await readOrganization();
   const seat = organization?.seats.find((item) => item.accountId === account.id) ?? null;
-  return accessFor(seat?.role ?? null, true);
+  const access = accessFor(seat?.role ?? null, true);
+  if (seat || !(await readSystemAdmin())) return access;
+  return { ...access, prepare: false, chart: false, transport: false, stage: false, organize: false, publish: false, web: false, systemOnly: true, layers: [] };
 });
 
 export async function denied(kind: "prepare" | "stage" | "organize" | "publish") {

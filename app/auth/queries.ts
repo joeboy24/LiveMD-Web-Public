@@ -72,6 +72,13 @@ async function migrate() {
       created_at timestamptz not null default now()
     )
   `;
+  await sql`
+    create table if not exists account_visits (
+      id uuid primary key default gen_random_uuid(),
+      account_id uuid not null references accounts (id),
+      started_at timestamptz not null default now()
+    )
+  `;
   await sql`alter table accounts add column if not exists password_hash text`;
   await sql`alter table seats add column if not exists accepted_at timestamptz`;
   await sql`alter table seats add column if not exists account_id uuid references accounts (id)`;
