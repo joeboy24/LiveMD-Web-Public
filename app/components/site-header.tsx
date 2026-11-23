@@ -63,8 +63,8 @@ function HeaderFrame({
         >
           <FiMenu aria-hidden className="size-5" />
         </button>
-        <Link href="/" data-help="Live MD. Opens the shows." className="hidden items-center gap-2.5 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary-hover md:flex">
-          <span className="relative grid size-9 place-items-center overflow-hidden rounded-xl bg-primary text-white shadow-[0_8px_18px_rgb(7_111_191/0.45)]">
+        <Link href="/" data-help="Live MD. Opens the shows." className="flex items-center gap-2.5 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary-hover">
+          <span className="relative hidden size-9 place-items-center overflow-hidden rounded-xl bg-primary text-white shadow-[0_8px_18px_rgb(7_111_191/0.45)] md:grid">
             <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgb(255_255_255/0.28),transparent_58%)]" />
             <Waveform />
           </span>

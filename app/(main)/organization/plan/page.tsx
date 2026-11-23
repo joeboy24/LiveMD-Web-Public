@@ -115,8 +115,8 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
       <p className="max-w-xl text-[14px] leading-6 text-muted">
         {owner
           ? until
-            ? `Personal includes 10 GB. House and Room include 100 GB. Custom includes 150 GB. Another plan can be chosen after ${until}.`
-            : "Personal includes 10 GB. House and Room include 100 GB. Custom includes 150 GB. The plan runs for the term that was paid."
+            ? `Personal includes 10 GB. House includes 100 GB. Room and Custom include 150 GB. Another plan can be chosen after ${until}.`
+            : "Personal includes 10 GB. House includes 100 GB. Room and Custom include 150 GB. The plan runs for the term that was paid."
           : "The owner chooses the plan."}
       </p>
     </div>

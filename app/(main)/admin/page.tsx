@@ -20,7 +20,7 @@ async function Prices() {
       <PageIntro
         eyebrow="SYSTEM"
         title="Prices"
-        detail="Personal includes 10 GB. House and Room include 100 GB. Custom includes 150 GB. Above 100 seats its price is the seat count times the Room price, divided by 100."
+        detail="Personal includes 10 GB. House includes 100 GB. Room and Custom include 150 GB. Above 100 seats its price is the seat count times the Room price, divided by 100."
       />
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {paid.map((plan) => {

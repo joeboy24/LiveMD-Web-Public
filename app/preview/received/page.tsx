@@ -3,11 +3,19 @@ import { PaymentReceived } from "../../components/payment-received";
 
 const samples = [
   { plan: "House", seats: "50", storage: "100", label: "1 year" },
-  { plan: "Room", seats: "100", storage: "100", label: "1 year" },
+  { plan: "Room", seats: "100", storage: "150", label: "1 year" },
   { plan: "Custom", seats: "150", storage: "150", label: "1 year" },
 ];
 
-export default async function ReceivedPreview({ searchParams }: { searchParams: Promise<{ plan?: string; seats?: string; storage?: string; label?: string }> }) {
+export default function ReceivedPreview({ searchParams }: { searchParams: Promise<{ plan?: string; seats?: string; storage?: string; label?: string }> }) {
+  return (
+    <Suspense fallback={<p className="p-6 text-base text-muted">Loading the receipt.</p>}>
+      <ReceivedBody searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function ReceivedBody({ searchParams }: { searchParams: Promise<{ plan?: string; seats?: string; storage?: string; label?: string }> }) {
   const query = await searchParams;
   const plan = query.plan || "Room";
   const seats = numberOr(query.seats, 100);

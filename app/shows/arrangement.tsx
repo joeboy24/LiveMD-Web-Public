@@ -866,6 +866,9 @@ export function Arrangement({
     armTokenRef.current = token;
     const showBar = !uploadRef.current;
     if (showBar) setProgress(0.08);
+    const unlocked = performanceContext(audioRef.current);
+    audioRef.current = unlocked;
+    primeOutputs(unlocked);
     await allowOutputNames();
     if (token !== armTokenRef.current) return;
     const context = performanceContext(audioRef.current);

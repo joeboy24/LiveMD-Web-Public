@@ -170,6 +170,7 @@ function Composer({
       ) : null}
       <Field
         className="mt-3 shrink-0"
+        size="sm"
         label="Subject"
         name="subject"
         value={subject}
@@ -180,6 +181,7 @@ function Composer({
       />
       <TextArea
         className="mt-3 shrink-0"
+        size="sm"
         label="Message"
         name="body"
         value={body}

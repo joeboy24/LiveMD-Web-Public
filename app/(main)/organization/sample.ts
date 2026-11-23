@@ -93,8 +93,8 @@ export function customPriceCents(roomCents: number | null, customSeats: number) 
 }
 
 export function storageGb(plan: string) {
-  if (plan === "Custom") return 150;
-  if (plan === "House" || plan === "Room") return 100;
+  if (plan === "Room" || plan === "Custom") return 150;
+  if (plan === "House") return 100;
   if (plan === "Personal") return 10;
   return null;
 }

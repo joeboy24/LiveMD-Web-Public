@@ -41,7 +41,7 @@ export function NotesPanel({
   checkout: CheckoutDraft | null;
 }) {
   return (
-    <aside data-notes="" className="fixed inset-0 z-30 overflow-y-auto bg-background md:static md:z-auto md:h-full md:min-h-0 md:overflow-y-auto md:bg-transparent">
+    <aside data-notes="" className="fixed top-16 right-0 bottom-0 left-0 z-30 overflow-y-auto bg-background md:static md:inset-auto md:z-auto md:h-full md:min-h-0 md:overflow-y-auto md:bg-transparent">
       <div className="m-3 overflow-hidden rounded-2xl bg-surface shadow-[0_18px_40px_rgb(0_0_0/0.18)] ring-1 ring-white/10">
         <div className="h-1 bg-[linear-gradient(90deg,#25C290,#38A7E2,#FA8E23)]" />
         {feature === "checkout" ? null : <div className="flex items-center justify-between gap-2 px-3 pt-3">
