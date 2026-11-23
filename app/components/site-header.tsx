@@ -19,7 +19,7 @@ const systemLink = {
   href: "/admin",
   label: "System",
   icon: FiSettings,
-  help: "Prices, discounts, and system users.",
+  help: "Prices, discounts, organizations, and system users.",
   current: (pathname: string) => pathname.startsWith("/admin"),
 };
 
