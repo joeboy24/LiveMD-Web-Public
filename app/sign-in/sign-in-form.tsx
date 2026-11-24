@@ -10,6 +10,7 @@ const initial: SignInState = { error: null };
 export function SignInForm({ expired, closed = false }: { expired: boolean; closed?: boolean }) {
   const [mode, setMode] = useState<"sign-in" | "create">("sign-in");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
@@ -18,7 +19,7 @@ export function SignInForm({ expired, closed = false }: { expired: boolean; clos
   const creatingAccount = mode === "create";
   const pending = creatingAccount ? creating : signingIn;
   const error = creatingAccount ? createState.error : signInState.error;
-  const ready = email.trim().length > 0 && password.length > 0 && (!creatingAccount || name.trim().length > 0);
+  const ready = email.trim().length > 0 && password.length > 0 && (!creatingAccount || (name.trim().length > 0 && phone.trim().length > 0));
 
   return (
     <div>
@@ -32,7 +33,10 @@ export function SignInForm({ expired, closed = false }: { expired: boolean; clos
       </div>
       <form action={creatingAccount ? createAction : signInAction} className="mt-6 grid gap-3">
         {creatingAccount ? (
-          <Field label="Name" name="name" tone="surface" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" autoFocus />
+          <>
+            <Field label="Name" name="name" tone="surface" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your name" autoComplete="name" autoFocus />
+            <Field label="Phone" name="phone" type="tel" tone="surface" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone" autoComplete="tel" />
+          </>
         ) : null}
         <Field label="Email" name="email" type="email" tone="surface" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" autoFocus={!creatingAccount} />
         <label className="grid gap-1.5">

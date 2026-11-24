@@ -28,11 +28,11 @@ async function ProfileBody() {
   const seated = organization && access.role ? { organization: organization.name, role: access.role, detail: role?.detail ?? "" } : null;
   return (
     <div className="mx-auto w-full max-w-3xl">
-      <PageIntro eyebrow="PROFILE" title={name || "Your profile"} detail="Your name and email. The role stays with the seat." />
+      <PageIntro eyebrow="PROFILE" title={name || "Your profile"} detail="Your name, phone, and email. The role stays with the seat." />
       <div className="mt-8 grid gap-3 lg:grid-cols-2">
         <section className="rounded-2xl bg-surface p-5">
           <h2 className="text-[15px] font-semibold text-ink">Account</h2>
-          <IdentityForm name={name} email={email} />
+          <IdentityForm name={name} email={email} phone={account?.phone ?? ""} />
         </section>
         <section className="rounded-2xl bg-surface p-5">
           <h2 className="text-[15px] font-semibold text-ink">Password</h2>

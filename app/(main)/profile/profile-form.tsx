@@ -9,14 +9,16 @@ import { savePassword, saveProfile, type ProfileState } from "./actions";
 
 const initial: ProfileState = { error: null, saved: false, stamp: "" };
 
-export function IdentityForm({ name, email }: { name: string; email: string }) {
+export function IdentityForm({ name, email, phone }: { name: string; email: string; phone: string }) {
   const [nextName, setNextName] = useState(name);
+  const [nextPhone, setNextPhone] = useState(phone);
   const [notice, setNotice] = useState<string | null>(null);
   const [state, action, pending] = useActionState(saveProfile, initial);
   useEffect(() => {
     setNextName(name);
-  }, [name]);
-  const ready = nextName.trim().length > 0 && nextName.trim() !== name;
+    setNextPhone(phone);
+  }, [name, phone]);
+  const ready = nextName.trim().length > 0 && (nextName.trim() !== name || nextPhone.trim() !== phone);
 
   useEffect(() => {
     if (!state.saved) return;
@@ -26,6 +28,7 @@ export function IdentityForm({ name, email }: { name: string; email: string }) {
   return (
     <form action={action} className="mt-4">
       <Field label="Name" name="name" value={nextName} onChange={(event) => setNextName(event.target.value)} autoComplete="name" />
+      <Field className="mt-4" label="Phone" name="phone" type="tel" value={nextPhone} onChange={(event) => setNextPhone(event.target.value)} autoComplete="tel" placeholder="Phone" />
       <Field className="mt-4" label="Email" name="email" type="email" value={email} readOnly />
       {state.error ? <p className="mt-3 text-sm text-[#e4372d]">{state.error}</p> : null}
       <SaveButton pending={pending} disabled={pending || !ready} className="mt-4" />

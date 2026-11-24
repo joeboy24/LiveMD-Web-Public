@@ -13,6 +13,7 @@ export type SessionAccount = {
   id: string;
   email: string;
   name: string | null;
+  phone: string | null;
 };
 
 export const sessionCookie = {
@@ -80,6 +81,27 @@ async function migrate() {
     )
   `;
   await sql`alter table accounts add column if not exists password_hash text`;
+  await sql`alter table accounts add column if not exists phone text`;
+  await sql`
+    create table if not exists passkeys (
+      id uuid primary key default gen_random_uuid(),
+      account_id uuid not null references accounts (id),
+      credential_id text not null unique,
+      public_key text not null,
+      sign_count bigint not null default 0,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists passkey_challenges (
+      id uuid primary key default gen_random_uuid(),
+      account_id uuid references accounts (id),
+      challenge text not null,
+      kind text not null,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now()
+    )
+  `;
   await sql`alter table seats add column if not exists accepted_at timestamptz`;
   await sql`alter table seats add column if not exists account_id uuid references accounts (id)`;
 }
@@ -92,13 +114,12 @@ export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export const readSessionAccount = cache(async (): Promise<SessionAccount | null> => {
+export async function readAccountByToken(token: string): Promise<SessionAccount | null> {
   await ensureAuthTables();
-  const token = (await cookies()).get(cookieName)?.value;
   if (!token || token.length > 128) return null;
   const sql = getSql();
   const rows = await sql`
-    select accounts.id, accounts.email, accounts.name
+    select accounts.id, accounts.email, accounts.name, accounts.phone
     from sessions
     join accounts on accounts.id = sessions.account_id
     where sessions.token_hash = ${hashToken(token)}
@@ -111,7 +132,13 @@ export const readSessionAccount = cache(async (): Promise<SessionAccount | null>
     id: String(row.id),
     email: String(row.email),
     name: row.name ? String(row.name) : null,
+    phone: row.phone ? String(row.phone) : null,
   };
+}
+
+export const readSessionAccount = cache(async (): Promise<SessionAccount | null> => {
+  const token = (await cookies()).get(cookieName)?.value ?? "";
+  return readAccountByToken(token);
 });
 
 export async function createSignInLink(email: string) {
@@ -194,12 +221,25 @@ export async function findAccountByEmail(email: string) {
   };
 }
 
-export async function createPasswordAccount(email: string, name: string, passwordHash: string) {
+export async function createOpenAccount(email: string, name: string) {
   await ensureAuthTables();
   const sql = getSql();
   const created = await sql`
-    insert into accounts (email, name, password_hash)
-    values (${email}, ${name}, ${passwordHash})
+    insert into accounts (email, name)
+    values (${email}, ${name})
+    returning id
+  `;
+  const accountId = String(created[0].id);
+  await attachSeats(email, accountId);
+  return accountId;
+}
+
+export async function createPasswordAccount(email: string, name: string, passwordHash: string, phone: string | null = null) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const created = await sql`
+    insert into accounts (email, name, phone, password_hash)
+    values (${email}, ${name}, ${phone}, ${passwordHash})
     returning id
   `;
   const accountId = String(created[0].id);
@@ -217,6 +257,12 @@ export async function readAccountSecret(accountId: string) {
     limit 1
   `;
   return rows[0]?.password_hash ? String(rows[0].password_hash) : null;
+}
+
+export async function saveAccountPhone(accountId: string, phone: string | null) {
+  await ensureAuthTables();
+  const sql = getSql();
+  await sql`update accounts set phone = ${phone} where id = ${accountId}`;
 }
 
 export async function saveAccountName(accountId: string, name: string) {

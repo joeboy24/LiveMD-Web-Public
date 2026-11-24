@@ -31,6 +31,7 @@ create table if not exists accounts (
   id uuid primary key default gen_random_uuid(),
   email text not null,
   name text,
+  phone text,
   password_hash text,
   created_at timestamptz not null default now()
 );
@@ -40,6 +41,24 @@ create unique index if not exists accounts_email
 
 create table if not exists system_admins (
   account_id uuid primary key references accounts (id),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists passkeys (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references accounts (id),
+  credential_id text not null unique,
+  public_key text not null,
+  sign_count bigint not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists passkey_challenges (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid references accounts (id),
+  challenge text not null,
+  kind text not null,
+  expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
 

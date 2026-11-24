@@ -45,7 +45,7 @@ async function SignInBody({ searchParams }: { searchParams: Promise<{ error?: st
               />
             ))}
           </div>
-          <p className="mt-4 text-center text-xs leading-6 text-muted">Sign in to open the charts, tems and seats.</p>
+          <p className="mt-4 text-center text-xs leading-6 text-muted">Sign in to open the charts, stems and seats.</p>
           <div className="mt-8">
             <SignInForm expired={expired} closed={closed} />
           </div>

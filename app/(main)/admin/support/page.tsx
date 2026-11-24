@@ -2,7 +2,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { readSupportTickets } from "../../../admin/support";
 import { PageIntro } from "../../organization/chrome";
-import { SupportList } from "../support-list";
+import { SupportList } from "@/app/(main)/admin/support-list";
 
 export default function SupportPage() {
   return (
