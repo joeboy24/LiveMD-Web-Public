@@ -208,6 +208,7 @@ export async function updateSupportMail(accountId: string, on: boolean) {
   await sql`alter table system_admins add column if not exists support_mail boolean not null default false`;
   await sql`update system_admins set support_mail = ${on} where account_id = ${accountId} and deleted_at is null`;
   revalidatePath("/admin/users");
+  revalidatePath("/profile");
   return { error: null, saved: true };
 }
 

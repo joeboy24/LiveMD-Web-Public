@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { readSystemRole, readSystemUsers } from "../../../admin/access";
 import { readSessionAccount } from "../../../auth/queries";
@@ -13,6 +14,7 @@ export default function SystemUsersPage() {
 }
 
 async function Users() {
+  await connection();
   const [users, account, role] = await Promise.all([readSystemUsers(), readSessionAccount(), readSystemRole()]);
   return (
     <div className="grid gap-8">

@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { bucketAudioBytes } from "../../shows/storage";
 import { readPlanPrices, readTrialDays } from "../organization/billing";
@@ -14,6 +15,7 @@ export default function AdminPricesPage() {
 }
 
 async function Prices() {
+  await connection();
   const [prices, trialDays, storedAudio] = await Promise.all([readPlanPrices(), readTrialDays(), audioInBucket()]);
   const paid = plans;
   const allowance = (name: string) => {

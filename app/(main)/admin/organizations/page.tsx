@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { readPlatform } from "../../../admin/platform";
 import { PageIntro } from "../../organization/chrome";
@@ -12,6 +13,7 @@ export default function OrganizationsPage() {
 }
 
 async function Organizations() {
+  await connection();
   const organizations = await readPlatform();
   const seats = organizations.reduce((count, organization) => count + organization.seats.length, 0);
   return (

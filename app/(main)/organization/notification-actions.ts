@@ -4,7 +4,7 @@ import { readSystemAdmin } from "../../admin/access";
 import { readSessionAccount } from "../../auth/queries";
 import { getSql } from "../../db";
 import { ensureSystemNotices } from "./notify";
-import { readOrganization, readSeatAudience } from "./queries";
+import { ensureSupportColumns, readOrganization, readSeatAudience } from "./queries";
 
 export type Notice = {
   id: string;
@@ -69,29 +69,37 @@ export async function listNotifications(page = 0): Promise<NoticePage> {
   };
 }
 
-export async function supportPulse(): Promise<{ id: string; unread: number; title: string; body: string }> {
-  const accountId = await supportAccount();
-  if (!accountId) return { id: "", unread: 0, title: "", body: "" };
-  await ensureSystemNotices();
+export async function supportPulse(): Promise<{ open: string; title: string; body: string }> {
+  const account = await readSessionAccount();
+  if (!account || !(await readSystemAdmin())) return { open: "", title: "", body: "" };
+  await ensureSupportColumns();
   const sql = getSql();
+  const email = account.email.toLowerCase();
   const rows = await sql`
-    select id, title, body
-    from system_notices
-    where account_id = ${accountId} and read_at is null
-    order by created_at desc
-    limit 1
+    select messages.id, messages.subject, messages.body, messages.sender_name as "senderName",
+      organizations.name as organization
+    from messages
+    join organizations on organizations.id = messages.organization_id
+    where messages.group_name = 'Support'
+      and not exists (
+        select 1 from support_replies where support_replies.message_id = messages.id
+      )
+      and lower(coalesce(messages.sender_email, '')) <> ${email}
+    order by messages.created_at desc
   `;
-  const unread = await sql`
-    select count(*)::int as unread
-    from system_notices
-    where account_id = ${accountId} and read_at is null
-  `;
-  const row = rows[0];
+  const newest = rows[0];
+  const open = rows
+    .map((row) => (row.id ? String(row.id) : ""))
+    .filter(Boolean)
+    .sort()
+    .join(",");
+  const sender = newest?.senderName ? String(newest.senderName) : "Seat";
+  const organization = newest?.organization ? String(newest.organization) : "";
+  const text = newest?.body ? String(newest.body) : "";
   return {
-    id: row?.id ? String(row.id) : "",
-    unread: Number(unread[0]?.unread ?? 0),
-    title: row?.title ? String(row.title) : "",
-    body: row?.body ? String(row.body) : "",
+    open,
+    title: newest?.subject ? String(newest.subject) : "",
+    body: newest ? `${sender}${organization ? ` · ${organization}` : ""}\n${text}` : "",
   };
 }
 

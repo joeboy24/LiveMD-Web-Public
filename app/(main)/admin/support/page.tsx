@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { readSupportTickets } from "../../../admin/support";
 import { PageIntro } from "../../organization/chrome";
@@ -12,6 +13,7 @@ export default function SupportPage() {
 }
 
 async function Support() {
+  await connection();
   const tickets = await readSupportTickets();
   return (
     <div className="grid gap-8">

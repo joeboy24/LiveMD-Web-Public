@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { Field } from "../../components/field";
 import { SaveButton } from "../../components/save-button";
 import { Toast } from "../../components/toast";
+import { updateSupportMail } from "../admin/actions";
 import { savePassword, saveProfile, type ProfileState } from "./actions";
 
 const initial: ProfileState = { error: null, saved: false, stamp: "" };
@@ -55,5 +56,39 @@ export function PasswordForm() {
       <SaveButton pending={pending} disabled={pending || !ready} className="mt-4" />
       <Toast message={notice} onDone={() => setNotice(null)} />
     </form>
+  );
+}
+
+export function SupportMail({ accountId, on }: { accountId: string; on: boolean }) {
+  const [checked, setChecked] = useState(on);
+  const [notice, setNotice] = useState<{ message: string; tone: "success" | "info" } | null>(null);
+
+  async function change(next: boolean) {
+    setChecked(next);
+    const result = await updateSupportMail(accountId, next);
+    if (!result.saved) {
+      setChecked(checked);
+      setNotice({ message: result.error ?? "Could not save that.", tone: "info" });
+      return;
+    }
+    setNotice({ message: next ? "Support email is on." : "Support email is off.", tone: "success" });
+  }
+
+  return (
+    <div className="mt-4">
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-background px-3 py-3">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => void change(event.target.checked)}
+          className="mt-1 size-4 shrink-0 accent-[#076FBF]"
+        />
+        <span>
+          <span className="block text-[14px] font-semibold text-ink">Receive support notifications</span>
+          <span className="block text-[13px] leading-5 text-muted">Email when a support message arrives. Every system account still sees it in the app.</span>
+        </span>
+      </label>
+      <Toast message={notice?.message ?? null} tone={notice?.tone} onDone={() => setNotice(null)} />
+    </div>
   );
 }

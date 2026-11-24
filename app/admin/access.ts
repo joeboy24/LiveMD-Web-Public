@@ -82,6 +82,21 @@ function truthy(value: unknown) {
   return value === true || value === "t" || value === "true";
 }
 
+export async function readOwnSupportMail() {
+  if (!(await readSystemAdmin())) return null;
+  const account = await readSessionAccount();
+  if (!account) return null;
+  const sql = getSql();
+  const rows = await sql`
+    select support_mail as "supportMail"
+    from system_admins
+    where account_id = ${account.id} and deleted_at is null
+    limit 1
+  `;
+  if (!rows[0]) return null;
+  return truthy(rows[0].supportMail);
+}
+
 export async function accountIsClosed(accountId: string) {
   await ensureAdminTable();
   const sql = getSql();

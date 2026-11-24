@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { readDiscounts } from "../../organization/billing";
 import { PageIntro } from "../../organization/chrome";
@@ -12,6 +13,7 @@ export default function DiscountsPage() {
 }
 
 async function Discounts() {
+  await connection();
   const discounts = await readDiscounts();
   return (
     <div className="grid gap-8">

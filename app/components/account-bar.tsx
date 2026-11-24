@@ -3,7 +3,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { FiChevronDown, FiEdit2, FiLogIn, FiLogOut, FiUser } from "react-icons/fi";
+import { FiChevronDown, FiLogIn, FiLogOut, FiUser } from "react-icons/fi";
+import { TbUserEdit } from "react-icons/tb";
 import { signOut } from "../auth/actions";
 import type { SessionAccount } from "../auth/queries";
 import { clearPerformanceMode } from "../shows/performance-mode";
@@ -116,7 +117,7 @@ function ProfileMenu({
           onClick={onClose}
           className="flex items-center gap-3 border-t border-background px-4 py-3 text-[15px] font-semibold text-ink outline-none hover:bg-background focus-visible:bg-background"
         >
-          <FiEdit2 aria-hidden className="size-4" />
+          <TbUserEdit aria-hidden className="size-4" />
           Profile
         </Link>
       ) : null}
