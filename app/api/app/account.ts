@@ -6,6 +6,7 @@ import {
   createPasswordAccount,
   findAccountByEmail,
   openSession,
+  readAccountByToken,
   saveAccountName,
   saveAccountPhone,
   setAccountPassword,
@@ -48,6 +49,12 @@ export function appError(error: string, status: number) {
 
 export function appSession(session: AppSession) {
   return Response.json(session, { headers: { "Cache-Control": "no-store" } });
+}
+
+export async function readAppAccount(request: Request) {
+  const header = request.headers.get("authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  return readAccountByToken(token);
 }
 
 export async function openAppSession(accountId: string, email: string, name: string | null): Promise<AppSession> {

@@ -1,4 +1,5 @@
 import { ensureOrganizationTables } from "../../../(main)/organization/queries";
+import { planAccent } from "../../../(main)/organization/sample";
 import { readAccountByToken } from "../../../auth/queries";
 import { getSql } from "../../../db";
 import { appError } from "../account";
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
   await ensureOrganizationTables();
   const sql = getSql();
   const rows = await sql`
-    select organizations.id, organizations.name, seats.role
+    select organizations.id, organizations.name, organizations.plan, organizations.plan_until as "planUntil", seats.role
     from seats
     join organizations on organizations.id = seats.organization_id
     where seats.account_id = ${account.id}
@@ -19,12 +20,25 @@ export async function GET(request: Request) {
     order by organizations.name asc
   `;
   const places = [
-    { id: "personal", name: "Personal", detail: "Your own copy" },
-    ...rows.map((row) => ({
-      id: String(row.id),
-      name: String(row.name),
-      detail: String(row.role ?? "Member"),
-    })),
+    { id: "personal", name: "Personal", detail: "Your own copy", plan: "Personal", color: "076FBF" },
+    ...rows.map((row) => {
+      const plan = livePlan(String(row.plan ?? "Personal"), row.planUntil);
+      return {
+        id: String(row.id),
+        name: String(row.name),
+        detail: String(row.role ?? "Member"),
+        plan,
+        color: planAccent(plan).replace("#", ""),
+      };
+    }),
   ];
   return Response.json({ places }, { headers: { "Cache-Control": "no-store" } });
+}
+
+function livePlan(plan: string, until: unknown) {
+  const name = plan || "Personal";
+  if (!until) return name;
+  const time = new Date(String(until)).getTime();
+  if (!Number.isFinite(time) || time > Date.now()) return name;
+  return "Personal";
 }

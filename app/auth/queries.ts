@@ -343,6 +343,84 @@ export async function attachSeats(email: string, accountId: string) {
   }
 }
 
+export async function savePasskeyChallenge(challenge: string, kind: "register" | "sign-in", accountId: string | null) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const expires = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  await sql`delete from passkey_challenges where expires_at <= now()`;
+  const rows = await sql`
+    insert into passkey_challenges (account_id, challenge, kind, expires_at)
+    values (${accountId}, ${challenge}, ${kind}, ${expires})
+    returning id
+  `;
+  return String(rows[0].id);
+}
+
+export async function takePasskeyChallenge(id: string, kind: "register" | "sign-in", accountId: string | null) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const rows = accountId
+    ? await sql`
+        delete from passkey_challenges
+        where id = ${id} and kind = ${kind} and account_id = ${accountId} and expires_at > now()
+        returning challenge
+      `
+    : await sql`
+        delete from passkey_challenges
+        where id = ${id} and kind = ${kind} and account_id is null and expires_at > now()
+        returning challenge
+      `;
+  return rows[0]?.challenge ? String(rows[0].challenge) : null;
+}
+
+export async function listPasskeyIds(accountId: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const rows = await sql`select credential_id from passkeys where account_id = ${accountId}`;
+  return rows.map((row) => String(row.credential_id));
+}
+
+export async function savePasskey(accountId: string, credentialId: string, publicKey: string, signCount: number) {
+  await ensureAuthTables();
+  const sql = getSql();
+  try {
+    await sql`
+      insert into passkeys (account_id, credential_id, public_key, sign_count)
+      values (${accountId}, ${credentialId}, ${publicKey}, ${signCount})
+    `;
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+    if (code === "23505") return false;
+    throw error;
+  }
+  return true;
+}
+
+export async function readPasskey(credentialId: string) {
+  await ensureAuthTables();
+  const sql = getSql();
+  const rows = await sql`
+    select account_id, credential_id, public_key, sign_count
+    from passkeys
+    where credential_id = ${credentialId}
+    limit 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    accountId: String(row.account_id),
+    credentialId: String(row.credential_id),
+    publicKey: String(row.public_key),
+    signCount: Number(row.sign_count) || 0,
+  };
+}
+
+export async function savePasskeyCount(credentialId: string, signCount: number) {
+  await ensureAuthTables();
+  const sql = getSql();
+  await sql`update passkeys set sign_count = ${signCount} where credential_id = ${credentialId}`;
+}
+
 export async function openSession(accountId: string) {
   await ensureAuthTables();
   const token = newToken();

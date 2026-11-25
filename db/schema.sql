@@ -129,6 +129,7 @@ create index if not exists notifications_seat_created
 
 create table if not exists shows (
   id uuid primary key default gen_random_uuid(),
+  organization_id uuid references organizations (id),
   title text not null,
   performed_on date not null,
   published_at timestamptz,
