@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     from seats
     join organizations on organizations.id = seats.organization_id
     where seats.account_id = ${account.id}
+      and seats.disabled_at is null
       and (seats.invited_at is null or seats.accepted_at is not null)
     order by organizations.name asc
   `;

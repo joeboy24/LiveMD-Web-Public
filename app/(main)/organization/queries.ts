@@ -10,6 +10,7 @@ export type SeatRecord = {
   role: string;
   invited: boolean;
   accountId: string | null;
+  disabled: boolean;
 };
 
 export type OrganizationRecord = {
@@ -40,12 +41,12 @@ export function ensureSupportColumns() {
   );
 }
 
-export function ensureOrganizationTables() {
-  ready ??= migrate().catch((error: unknown) => {
+export async function ensureOrganizationTables() {
+  await (ready ??= migrate().catch((error: unknown) => {
     ready = null;
     throw error;
-  });
-  return ready;
+  }));
+  await getSql()`alter table seats add column if not exists disabled_at timestamptz`;
 }
 
 async function migrate() {
@@ -212,6 +213,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
         from seats
         join organizations on organizations.id = seats.organization_id
         where seats.account_id = ${account.id}
+          and seats.disabled_at is null
         order by seats.created_at asc
         limit 1
       `
@@ -225,7 +227,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
   if (!row) return null;
   const id = String(row.id);
   const seats = await sql`
-    select id, name, email, role, invited_at, accepted_at, account_id
+    select id, name, email, role, invited_at, accepted_at, account_id, disabled_at as "disabledAt"
     from seats
     where organization_id = ${id}
     order by created_at asc
@@ -243,6 +245,7 @@ export const readOrganization = cache(async (): Promise<OrganizationRecord | nul
       role: String(seat.role ?? "Owner"),
       invited: seat.invited_at != null && seat.accepted_at == null,
       accountId: seat.account_id ? String(seat.account_id) : null,
+      disabled: seat.disabledAt != null,
     })),
   };
 });
@@ -258,7 +261,7 @@ export const readSeatAudience = cache(async (): Promise<SeatAudience | null> => 
   const account = await readSessionAccount();
   const organization = await readOrganization();
   if (!account || !organization) return null;
-  const seat = organization.seats.find((item) => item.accountId === account.id);
+  const seat = organization.seats.find((item) => item.accountId === account.id && !item.disabled);
   if (!seat) return null;
   const seesAll = seat.role === "Owner" || seat.role === "Music director";
   if (seesAll) return { role: seat.role, seatId: seat.id, seesAll, groupIds: [] };

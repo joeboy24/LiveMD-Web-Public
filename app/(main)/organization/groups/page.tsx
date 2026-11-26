@@ -40,7 +40,7 @@ async function GroupsBody() {
         title="Groups"
         detail={`${organization.name}. Gather seats, message that group, or limit a show to it.`}
       />
-      <GroupBoard groups={groups} seats={organization.seats} />
+      <GroupBoard groups={groups} seats={organization.seats.filter((seat) => !seat.disabled)} />
     </div>
   );
 }

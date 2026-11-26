@@ -10,7 +10,7 @@ import { Toast, type ToastTone } from "../../components/toast";
 import { RowMenu } from "../../components/row-menu";
 import { Monogram } from "./chrome";
 import { roles } from "./sample";
-import { addSeat, reinviteSeat, removeSeat, renameSeat, type OrganizationState } from "./actions";
+import { addSeat, reinviteSeat, removeSeat, renameSeat, restoreSeat, type OrganizationState } from "./actions";
 
 type SeatRecord = {
   id: string;
@@ -18,6 +18,7 @@ type SeatRecord = {
   email: string | null;
   role: string;
   invited: boolean;
+  disabled: boolean;
 };
 
 const initial: OrganizationState = { error: null };
@@ -48,8 +49,9 @@ export function SeatBoard({ seats, seatAllowance }: { seats: SeatRecord[]; seatA
     return result;
   }, initial);
 
-  const count = seats.length === 1 ? "1 seat" : `${seats.length} seats`;
-  const full = seats.length >= seatAllowance;
+  const active = seats.filter((seat) => !seat.disabled);
+  const count = active.length === 1 ? "1 seat" : `${active.length} seats`;
+  const full = active.length >= seatAllowance;
   const ready = name.trim().length > 0 && email.trim().length > 0 && role.length > 0;
   const allowanceLabel = seatAllowance === 1 ? "1 seat" : `${seatAllowance} seats`;
 
@@ -90,6 +92,7 @@ export function SeatBoard({ seats, seatAllowance }: { seats: SeatRecord[]; seatA
               />
             ) : (
               <ListRow
+                quiet={seat.disabled}
                 leading={<Monogram name={seat.name} />}
                 title={seat.name}
                 meta={seatMeta(seat)}
@@ -98,7 +101,7 @@ export function SeatBoard({ seats, seatAllowance }: { seats: SeatRecord[]; seatA
                     label={`${seat.name} actions`}
                     items={[
                       { label: "Edit", onSelect: () => setEditing(seat.id) },
-                      ...(seat.invited
+                      ...(seat.invited && !seat.disabled
                         ? [{
                             label: "Invite again",
                             onSelect: () => {
@@ -118,16 +121,37 @@ export function SeatBoard({ seats, seatAllowance }: { seats: SeatRecord[]; seatA
                             },
                           }]
                         : []),
-                      {
-                        label: "Remove",
-                        disabled: seats.length < 2,
-                        onSelect: () => {
-                          void removeSeat(seat.id).then((result) => {
-                            setError(result.error);
-                            if (!result.error) router.refresh();
-                          });
-                        },
-                      },
+                      seat.disabled
+                        ? {
+                            label: "Restore",
+                            onSelect: () => {
+                              if (active.length >= seatAllowance) {
+                                setNotice({ text: "This plan is full. Restore needs an open seat.", tone: "warning", id: Date.now() });
+                                return;
+                              }
+                              void restoreSeat(seat.id).then((result) => {
+                                if (result.error) {
+                                  setNotice({ text: result.error, tone: "warning", id: Date.now() });
+                                  return;
+                                }
+                                router.refresh();
+                              });
+                            },
+                          }
+                        : {
+                            label: "Remove",
+                            disabled: seat.role === "Owner",
+                            onSelect: () => {
+                              if (seat.role === "Owner") return;
+                              void removeSeat(seat.id).then((result) => {
+                                if (result.error) {
+                                  setNotice({ text: result.error, tone: "warning", id: Date.now() });
+                                  return;
+                                }
+                                router.refresh();
+                              });
+                            },
+                          },
                     ]}
                   />
                 }
@@ -142,18 +166,20 @@ export function SeatBoard({ seats, seatAllowance }: { seats: SeatRecord[]; seatA
 }
 
 function seatMeta(seat: SeatRecord) {
-  return [seat.role, seat.email, seat.invited ? "Invited" : ""].filter(Boolean).join(" · ");
+  return [seat.role, seat.email, seat.invited ? "Invited" : "", seat.disabled ? "Disabled" : ""].filter(Boolean).join(" · ");
 }
 
-function RoleField({ value, onChange, className = "" }: { value: string; onChange: (role: string) => void; className?: string }) {
+function RoleField({ value, onChange, className = "", locked = false }: { value: string; onChange: (role: string) => void; className?: string; locked?: boolean }) {
   return (
     <label className={`grid gap-1.5 ${className}`}>
       <span className="text-[13px] font-semibold text-muted">Role</span>
+      {locked ? <input type="hidden" name="role" value={value} /> : null}
       <select
-        name="role"
+        name={locked ? undefined : "role"}
         value={value}
+        disabled={locked}
         onChange={(event) => onChange(event.target.value)}
-        className="h-12 rounded-xl bg-background px-3 text-[15px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-primary-hover"
+        className="h-12 rounded-xl bg-background px-3 text-[15px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-primary-hover disabled:text-muted"
       >
         <option value="">Choose a role</option>
         {roles.map((role) => (
@@ -188,7 +214,7 @@ function RenameSeat({
     <form action={action} className="grid gap-2 rounded-xl bg-surface p-3">
       <Field label="Name" name="name" value={name} onChange={(event) => setName(event.target.value)} autoFocus />
       <Field label="Email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" />
-      <RoleField value={role} onChange={setRole} />
+      <RoleField value={role} onChange={setRole} locked={seat.role === "Owner"} />
       {state.error ? <p className="text-sm text-[#e4372d]">{state.error}</p> : null}
       <SaveButton pending={pending} disabled={pending || name.trim().length === 0 || role.length === 0 || (seat.invited && email.trim().length === 0)} />
     </form>

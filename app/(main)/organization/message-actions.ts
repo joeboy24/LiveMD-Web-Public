@@ -38,7 +38,7 @@ const idPattern = /^[0-9a-f-]{36}$/i;
 export async function listMessageSeats(): Promise<MailSeat[]> {
   const organization = await readOrganization();
   if (!organization) return [];
-  return organization.seats.map((seat) => ({
+  return organization.seats.filter((seat) => !seat.disabled).map((seat) => ({
     id: seat.id,
     name: seat.name,
     email: seat.email,

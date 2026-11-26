@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 export function ListRow({
   href,
   selected = false,
+  quiet = false,
   leading,
   title,
   meta,
@@ -11,14 +12,17 @@ export function ListRow({
 }: {
   href?: string;
   selected?: boolean;
+  quiet?: boolean;
   leading?: ReactNode;
   title: string;
   meta?: string;
   trailing?: ReactNode;
 }) {
-  const shell = selected
-    ? "flex min-h-14 min-w-0 items-center gap-1 overflow-hidden rounded-xl bg-surface px-2.5 py-2 shadow-[inset_3px_0_0_0_var(--primary)]"
-    : "flex min-h-14 min-w-0 items-center gap-1 overflow-hidden rounded-xl bg-surface px-2.5 py-2 hover:bg-surface-elevated";
+  const shell = quiet
+    ? "flex min-h-14 min-w-0 items-center gap-1 overflow-hidden rounded-xl border border-surface-elevated bg-background px-2.5 py-2"
+    : selected
+      ? "flex min-h-14 min-w-0 items-center gap-1 overflow-hidden rounded-xl bg-surface px-2.5 py-2 shadow-[inset_3px_0_0_0_var(--primary)]"
+      : "flex min-h-14 min-w-0 items-center gap-1 overflow-hidden rounded-xl bg-surface px-2.5 py-2 hover:bg-surface-elevated";
   const body = (
     <>
       {leading}

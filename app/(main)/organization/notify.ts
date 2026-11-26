@@ -125,6 +125,7 @@ export async function notifyLeaders(organizationId: string, title: string, body:
     select id
     from seats
     where organization_id = ${organizationId}
+      and disabled_at is null
       and role in ('Owner', 'Music director')
   `;
   await notifySeats(
@@ -163,11 +164,12 @@ export async function notifyPublishedShow(showId: string, fallbackOrganizationId
     select id, role
     from seats
     where organization_id = ${organizationId}
+      and disabled_at is null
   `;
   const links = await sql`
     select seat_id as "seatId", group_id as "groupId"
     from group_seats
-    where seat_id in (select id from seats where organization_id = ${organizationId})
+    where seat_id in (select id from seats where organization_id = ${organizationId} and disabled_at is null)
   `;
   const groupsBySeat = new Map<string, string[]>();
   for (const link of links) {

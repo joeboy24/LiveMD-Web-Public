@@ -42,7 +42,8 @@ export async function setGroupSeat(groupId: string, seatId: string, member: bool
   const block = await denied("organize");
   if (block || !idPattern.test(groupId) || !idPattern.test(seatId)) return "That seat didn't update.";
   const organization = await readOrganization();
-  if (!organization || !organization.seats.some((seat) => seat.id === seatId)) return "That seat is missing.";
+  const seat = organization?.seats.find((item) => item.id === seatId);
+  if (!organization || !seat || (member && seat.disabled)) return "That seat is missing.";
   const sql = getSql();
   const groups = await sql`
     select id from groups where id = ${groupId} and organization_id = ${organization.id}

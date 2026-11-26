@@ -44,7 +44,7 @@ async function OrganizationBody() {
         detail="Shows for this organization are the ones the player can open."
       />
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="SEATS" value={String(organization.seats.length)} />
+        <Stat label="SEATS" value={String(organization.seats.filter((seat) => !seat.disabled).length)} />
         <Stat label="SHOWS" value={String(shows.length)} />
         <Stat label="ON THE PLAYER" value={String(published.length)} />
       </div>

@@ -80,7 +80,7 @@ export async function addSeat(_state: OrganizationState, formData: FormData): Pr
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
   if (organization.seats.some((seat) => seat.email === email)) return { error: "That email already has a seat." };
-  if (organization.seats.length >= (await readSeatAllowance(livePlan(organization.plan, organization.planUntil)))) redirect("/organization/plan");
+  if (openSeatCount(organization.seats) >= (await readSeatAllowance(livePlan(organization.plan, organization.planUntil)))) redirect("/organization/plan");
   const sql = getSql();
   await sql`
     insert into seats (organization_id, name, email, role, invited_at)
@@ -104,6 +104,8 @@ export async function renameSeat(seatId: string, _state: OrganizationState, form
   if (!organization) return { error: "Name the organization first." };
   const seat = organization.seats.find((item) => item.id === seatId);
   if (!seat) return { error: "That seat is missing." };
+  if (seat.role === "Owner" && role !== "Owner") return { error: "The owner keeps this seat." };
+  if (seat.role !== "Owner" && role === "Owner") return { error: "The owner keeps this seat." };
   if (seat.invited && !email) return { error: "Enter an email." };
   if (email && organization.seats.some((item) => item.id !== seatId && item.email === email)) {
     return { error: "That email already has a seat." };
@@ -148,16 +150,46 @@ export async function removeSeat(seatId: string): Promise<OrganizationState> {
   if (!isId(seatId)) return { error: "That seat is missing." };
   const organization = await readOrganization();
   if (!organization) return { error: "Name the organization first." };
-  if (organization.seats.length < 2) return { error: "An organization keeps one seat." };
+  const seat = organization.seats.find((item) => item.id === seatId);
+  if (!seat) return { error: "That seat is missing." };
+  if (seat.role === "Owner") return { error: "The owner keeps this seat." };
   const sql = getSql();
   const rows = await sql`
-    delete from seats
+    update seats
+    set disabled_at = now()
+    where id = ${seatId} and organization_id = ${organization.id} and role <> 'Owner'
+    returning id
+  `;
+  if (!rows[0]) return { error: "That seat is missing." };
+  revalidatePath("/", "layout");
+  return { error: null };
+}
+
+export async function restoreSeat(seatId: string): Promise<OrganizationState> {
+  const block = await denied("organize");
+  if (block) return { error: block };
+  if (!isId(seatId)) return { error: "That seat is missing." };
+  const organization = await readOrganization();
+  if (!organization) return { error: "Name the organization first." };
+  const seat = organization.seats.find((item) => item.id === seatId);
+  if (!seat) return { error: "That seat is missing." };
+  if (!seat.disabled) return { error: null };
+  const allowance = await readSeatAllowance(livePlan(organization.plan, organization.planUntil));
+  if (openSeatCount(organization.seats) >= allowance) return { error: "This plan is full. Restore needs an open seat." };
+  const sql = getSql();
+  const rows = await sql`
+    update seats
+    set disabled_at = null
     where id = ${seatId} and organization_id = ${organization.id}
     returning id
   `;
   if (!rows[0]) return { error: "That seat is missing." };
   revalidatePath("/", "layout");
   return { error: null };
+}
+
+function openSeatCount(seats: { disabled: boolean }[]) {
+  return seats.filter((seat) => !seat.disabled).length;
 }
 
 const roleNames = new Set<string>(roles.map((role) => role.name));

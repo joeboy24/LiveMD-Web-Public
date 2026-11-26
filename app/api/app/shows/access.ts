@@ -14,6 +14,7 @@ export async function seatInPlace(accountId: string, placeId: string): Promise<S
     from seats
     where account_id = ${accountId}
       and organization_id = ${placeId}
+      and disabled_at is null
       and (invited_at is null or accepted_at is not null)
     limit 1
   `;

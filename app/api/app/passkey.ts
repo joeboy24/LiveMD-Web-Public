@@ -17,7 +17,7 @@ import {
 } from "../../auth/queries";
 import { appError, appSession, openAppSession, readAppAccount, type AppSession } from "./account";
 
-const rpID = "web-pi-beige-81.vercel.app";
+const rpID = "livemdstage.com";
 const origin = `https://${rpID}`;
 const rpName = "Live MD";
 

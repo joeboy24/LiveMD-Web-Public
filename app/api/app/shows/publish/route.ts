@@ -26,6 +26,7 @@ export async function POST(request: Request) {
     from seats
     where account_id = ${account.id}
       and organization_id = ${placeId}
+      and disabled_at is null
       and (invited_at is null or accepted_at is not null)
       and role in ('Owner', 'Music director')
     limit 1

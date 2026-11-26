@@ -25,7 +25,7 @@ async function PlanBody({ searchParams }: { searchParams: Promise<{ checkout?: s
   const open = termOpen(organization?.planUntil ?? null);
   const until = open && organization?.planUntil ? formatTerm(organization.planUntil) : null;
   const trialDays = organization?.plan === "Personal" && !open ? trialDaysLeft(organization.trialUntil) : null;
-  const used = organization?.seats.length ?? 0;
+  const used = organization?.seats.filter((seat) => !seat.disabled).length ?? 0;
   const allowance = await readSeatAllowance(current);
   const full = used >= allowance;
   const owner = access.role === "Owner";
