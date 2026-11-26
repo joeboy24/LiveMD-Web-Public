@@ -1,6 +1,6 @@
 import { ensureOrganizationTables } from "../../../(main)/organization/queries";
 import { planAccent } from "../../../(main)/organization/sample";
-import { readAccountByToken } from "../../../auth/queries";
+import { attachSeats, readAccountByToken } from "../../../auth/queries";
 import { getSql } from "../../../db";
 import { appError } from "../account";
 
@@ -10,6 +10,7 @@ export async function GET(request: Request) {
   const account = await readAccountByToken(token);
   if (!account) return appError("Sign in required.", 401);
   await ensureOrganizationTables();
+  await attachSeats(account.email.toLowerCase(), account.id);
   const sql = getSql();
   const rows = await sql`
     select organizations.id, organizations.name, organizations.plan, organizations.plan_until as "planUntil", seats.role

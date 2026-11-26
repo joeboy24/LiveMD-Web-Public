@@ -70,6 +70,7 @@ export async function signInApp(email: string, password: string) {
   const matches = await checkPassword(password, account.passwordHash);
   if (!matches) return appError("That email or password is wrong.", 401);
   if (await accountIsClosed(account.id)) return appError("This account is closed.", 403);
+  await attachSeats(email, account.id);
   return appSession(await openAppSession(account.id, account.email, account.name));
 }
 
@@ -94,6 +95,9 @@ export async function signInGoogle(email: string, name: string): Promise<AppSess
   const existing = await findAccountByEmail(email);
   if (existing && (await accountIsClosed(existing.id))) return null;
   const accountId = existing ? existing.id : await createOpenAccount(email, name);
-  if (existing && !existing.name && name) await saveAccountName(existing.id, name);
+  if (existing) {
+    if (!existing.name && name) await saveAccountName(existing.id, name);
+    await attachSeats(email, existing.id);
+  }
   return openAppSession(accountId, email, existing?.name ?? name);
 }

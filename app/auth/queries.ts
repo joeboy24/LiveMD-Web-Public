@@ -324,7 +324,7 @@ export async function attachSeats(email: string, accountId: string) {
           when invited_at is not null then coalesce(accepted_at, now())
           else accepted_at
         end
-    where lower(email) = ${email}
+    where lower(email) = lower(${email})
       and disabled_at is null
     returning id, organization_id as "organizationId", name,
       (invited_at is not null and accepted_at = now()) as joined
