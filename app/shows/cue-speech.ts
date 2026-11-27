@@ -65,6 +65,25 @@ export async function storeCueVoices(texts: string[]) {
   return null;
 }
 
+export async function cueVoicePack(texts: string[]) {
+  const voices: { text: string; file: string; body: Buffer }[] = [];
+  const seen = new Set<string>();
+  for (const raw of texts) {
+    const clean = raw.trim().slice(0, 80);
+    if (!clean || seen.has(clean)) continue;
+    seen.add(clean);
+    try {
+      const voice = await openCueVoice(clean);
+      if (!voice) continue;
+      const file = `cue-${createHash("sha256").update(clean).digest("hex")}.wav`;
+      voices.push({ text: clean, file, body: voice.body });
+    } catch {
+      // A missing voice falls back to the phone's own speaker.
+    }
+  }
+  return voices;
+}
+
 export async function openCueVoice(text: string): Promise<Spoken | null> {
   const clean = text.trim().slice(0, 80);
   if (!clean) return null;

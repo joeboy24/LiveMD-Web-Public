@@ -3,7 +3,7 @@ import { sessionCookieName } from "./app/auth/cookie";
 
 export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  if (path === "/sign-in" || path.startsWith("/sign-in/") || path.startsWith("/api/player") || path.startsWith("/api/app/") || path === "/api/stripe/webhook" || path.startsWith("/fonts") || path.startsWith("/.well-known/")) {
+  if (path === "/help" || path.startsWith("/help/") || path === "/sign-in" || path.startsWith("/sign-in/") || path.startsWith("/api/player") || path.startsWith("/api/app/") || path === "/api/stripe/webhook" || path.startsWith("/fonts") || path.startsWith("/.well-known/")) {
     return continueWithPath(request);
   }
   const session = request.cookies.get(sessionCookieName)?.value;
